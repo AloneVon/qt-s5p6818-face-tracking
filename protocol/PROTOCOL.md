@@ -1,0 +1,69 @@
+# Wire Protocol (SEC1)
+
+Single source of truth for the TCP protocol between the **terminal** and every
+client (Qt PC client, Vue/Capacitor mobile client). The C++ definition lives in
+`terminal/src/net/Protocol.h`; this document mirrors it for non-C++ clients.
+
+All multi-byte integers are **big-endian (network order)**.
+
+## Framing
+
+Every message is a 12-byte header followed by `length` payload bytes:
+
+| offset | size | field  | notes                                  |
+|--------|------|--------|----------------------------------------|
+| 0      | 4    | magic  | `0x53454331` = ASCII `"SEC1"`          |
+| 4      | 2    | type   | message type (below)                   |
+| 6      | 2    | flags  | reserved, 0                            |
+| 8      | 4    | length | number of payload bytes that follow    |
+
+A reader must: read 12 bytes, validate magic, read `length` payload bytes,
+dispatch on `type`, repeat. (TCP is a stream — always loop until you have the
+full header, then the full payload.)
+
+## Message types
+
+| type   | name           | dir | payload |
+|--------|----------------|-----|---------|
+| 0x0001 | HELLO          | ↔   | JSON `{"role":"pc"|"mobile"|"terminal","ver":1}` |
+| 0x0010 | VIDEO_FRAME    | T→C | 20-byte subheader + JPEG (see below) |
+| 0x0020 | SERVO_CMD      | C→T | JSON `{"mode":"step"|"abs","pan":<deg>,"tilt":<deg>}` |
+| 0x0021 | MODE_CMD       | C→T | JSON `{"autoTrack":true|false}` |
+| 0x0030 | FILE_LIST_REQ  | C→T | empty |
+| 0x0031 | FILE_LIST_RESP | T→C | JSON `[{"name":..,"size":..,"mtime":..}, ...]` |
+| 0x0032 | FILE_GET_REQ   | C→T | JSON `{"name":".."}` |
+| 0x0033 | FILE_DATA      | T→C | `[u32 chunkIndex][u32 totalChunks][u8 nameLen][name][bytes]` |
+| 0x0034 | FILE_DELETE_REQ| C→T | JSON `{"name":".."}` |
+| 0x0035 | FILE_DELETE_RESP| T→C| JSON `{"name":..,"ok":true|false}` |
+| 0x0040 | SNAPSHOT_REQ   | C→T | empty (terminal saves a JPEG, then sends FILE_LIST_RESP) |
+| 0x00F0 | HEARTBEAT      | ↔   | empty |
+
+### VIDEO_FRAME payload
+
+| offset | size | field  |
+|--------|------|--------|
+| 0      | 4    | seq    (frame counter) |
+| 4      | 4    | width  |
+| 8      | 4    | height |
+| 12     | 8    | ts_ms  (capture time, ms) |
+| 20     | …    | JPEG bytes (length = header.length − 20) |
+
+`mode:"step"` SERVO_CMD nudges the gimbal by `pan`/`tilt` degrees (relative);
+`mode:"abs"` sets absolute target angles. Sending any SERVO_CMD switches the
+terminal to manual mode for a few seconds (see `Config::manualOverrideMs`),
+then auto-tracking resumes.
+
+## JS reader sketch (mobile/web)
+
+```js
+// data: ArrayBuffer accumulated from the socket
+const dv = new DataView(data);
+const magic = dv.getUint32(0);            // expect 0x53454331
+const type  = dv.getUint16(4);
+const len   = dv.getUint32(8);
+const payload = new Uint8Array(data, 12, len);
+// VIDEO_FRAME: jpeg = payload.subarray(20); show via Blob -> <img>
+```
+
+> WebView JS cannot open raw TCP sockets. The mobile client uses a Capacitor
+> native TCP plugin, or the terminal's optional MJPEG/WebSocket bridge.

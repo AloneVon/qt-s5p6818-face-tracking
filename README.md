@@ -1,0 +1,145 @@
+# 基于 Qt 与 S5P6818 的全自动追踪安防系统
+
+> Fully‑automatic face‑tracking security system on the **S5P6818** (Cortex‑A53)
+> embedded Linux platform, with **Qt** desktop and **Vue 3 / Capacitor** mobile
+> clients.
+
+The embedded **terminal** captures camera video over **V4L2**, detects faces
+with **OpenCV (Haar cascade)**, drives a **pan/tilt servo gimbal (PWM via sysfs)**
+to keep the face centered, renders a local UI to the **Linux framebuffer**, and
+streams the annotated video over **TCP** to multiple clients that can also
+remote‑control the gimbal and browse recorded snapshots.
+
+---
+
+## Features
+
+- **V4L2 capture** — raw `ioctl` + `mmap` pipeline, negotiates MJPEG (preferred) or YUYV.
+- **Face detection & tracking** — Haar cascade on a downscaled gray frame; proportional
+  control with deadzone + step clamp keeps the largest face centered.
+- **Servo gimbal** — pan/tilt via the kernel PWM sysfs API (50 Hz, 1.0–2.0 ms → 0–180°).
+- **Local UI** — annotated video + status bar (FPS, mode, angles, face, client count)
+  blitted straight to `/dev/fb0`.
+- **TCP streaming + control** — custom framed protocol (`SEC1`): JPEG video out, JSON
+  control in; one thread per client multiplexes both directions with `poll()`.
+- **File manager** — list / download (chunked) / delete / snapshot, with a path‑traversal guard.
+- **Host‑dev mode** — `-DDEV_HOST` swaps the three hardware classes for desktop stubs
+  (`cv::VideoCapture`, `cv::imshow`, logging servo) so ~90% of the logic can be developed
+  on an Ubuntu‑x86 box with a USB webcam, no board required.
+
+## Architecture (terminal)
+
+Four long‑running threads plus one thread per connected client, glued by small
+thread‑safe shared objects (`FrameHub`, `TrackingState`, `CommandQueue`,
+`ClientRegistry`, `StatusBoard`):
+
+```
+ ┌──────────────────┐  publish   ┌───────────┐   read   ┌──────────────────┐
+ │ T1 VisionThread  │ ─────────▶ │  FrameHub  │ ───────▶ │ T2 DisplayThread │
+ │ V4L2 → Haar →    │            │ (Mat+JPEG, │          │ status overlay → │
+ │ overlay + encode │            │  shared)   │          │ /dev/fb0 (fb)    │
+ └────────┬─────────┘            └─────┬─────┘           └──────────────────┘
+          │ face center                │ latest frame
+          ▼                            ▼
+ ┌──────────────────┐           ┌──────────────────────┐
+ │  TrackingState   │           │ T4 TcpServer (accept)│
+ └────────┬─────────┘           └───────────┬──────────┘
+          │ read                            │ spawn per client
+          ▼                                 ▼
+ ┌──────────────────┐  CommandQueue  ┌──────────────────────────┐
+ │ T3 BusinessThread│ ◀───────────── │ Tn ClientSession         │
+ │ P‑control → PWM  │                │ JPEG out @FPS / ctrl+file │
+ │ servo (gimbal)   │                │ in  (one poll() loop)    │
+ └──────────────────┘                └──────────────────────────┘
+```
+
+A hardware‑abstraction layer (`ICamera` / `IDisplay` / `IServo`) is selected at
+compile time in [`terminal/src/app/Hardware.h`](terminal/src/app/Hardware.h):
+
+| Interface | Board build (default)        | Host‑dev build (`DEV_HOST=1`) |
+|-----------|------------------------------|-------------------------------|
+| camera    | `V4L2Camera` (ioctl + mmap)  | `HostCamera` (`cv::VideoCapture`) |
+| display   | `Framebuffer` (`/dev/fb0`)   | `WindowDisplay` (`cv::imshow`) |
+| servo     | `ServoController` (PWM sysfs) | `StubServo` (logs target angles) |
+
+## Repository layout
+
+```
+.
+├─ terminal/                 # Phase 1 — embedded terminal (C++17, OpenCV, pthreads)
+│  ├─ Makefile               # cross g++ / host‑dev build
+│  ├─ terminal.pro           # optional Qt Creator project (indexing convenience)
+│  ├─ models/                # haarcascade_frontalface_default.xml
+│  └─ src/
+│     ├─ core/    FrameHub, TrackingState, CommandQueue, ClientRegistry, Config.h, …
+│     ├─ capture/ V4L2Camera, HostCamera (ICamera)
+│     ├─ vision/  FaceDetector (Haar)
+│     ├─ display/ Framebuffer, WindowDisplay (IDisplay)
+│     ├─ servo/   ServoController, StubServo (IServo), PanTiltTracker
+│     ├─ net/     Protocol.h, TcpServer, ClientSession, MiniJson, SocketUtil
+│     ├─ file/    FileManager
+│     ├─ app/     VisionThread, DisplayThread, BusinessThread, Hardware.h
+│     └─ main.cpp
+├─ pc-client/                # Phase 2 — Qt + OpenCV desktop client (planned)
+├─ mobile-client/            # Phase 3 — Vue 3 + Capacitor mobile client (planned)
+├─ protocol/PROTOCOL.md      # wire protocol spec (mirrors terminal/src/net/Protocol.h)
+└─ tools/
+   ├─ cross-build/README.md  # toolchain + OpenCV armhf cross‑build + deploy notes
+   └─ smoke_test.py          # connects, grabs one VIDEO_FRAME, writes smoke.jpg
+```
+
+## Build & run (terminal)
+
+> The terminal targets **Linux** (V4L2 / framebuffer / sysfs) and needs OpenCV +
+> pthreads. It does **not** build on macOS — author anywhere, build on an Ubuntu
+> host or the cross‑toolchain. Full details in
+> [`tools/cross-build/README.md`](tools/cross-build/README.md).
+
+**Host‑dev (Ubuntu‑x86 + USB webcam, no board):**
+
+```bash
+sudo apt install build-essential pkg-config libopencv-dev
+cd terminal
+make host            # = make DEV_HOST=1
+./bin/terminal       # window shows annotated video; servo angles printed to stdout
+```
+
+**Cross build for the board (`arm-linux-gnueabihf`):**
+
+```bash
+cd terminal
+make CROSS=arm-linux-gnueabihf- \
+     PKG_CONFIG_PATH=/opt/armhf/lib/pkgconfig \
+     PKG_CONFIG_SYSROOT_DIR=/opt/armhf
+# then scp bin/terminal + models/ + armhf OpenCV .so to the board and run.
+```
+
+**Smoke‑test the stream** (with the terminal running):
+
+```bash
+tools/smoke_test.py 127.0.0.1 8888   # writes the first video frame to smoke.jpg
+```
+
+All board‑specific knobs (camera device, resolution, PWM chip/channels, servo
+limits, tracking gains, TCP port, stream FPS) live in one place:
+[`terminal/src/core/Config.h`](terminal/src/core/Config.h).
+
+## Wire protocol
+
+`SEC1` — a 12‑byte big‑endian header (`magic, type, flags, length`) + payload.
+Video frames are raw JPEG with a 20‑byte subheader; control/file messages are
+JSON. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
+
+## Roadmap
+
+- [x] **Phase 1 — Embedded terminal**: capture, detection, tracking, framebuffer UI,
+      TCP streaming + control, file management, host‑dev mode.
+- [ ] **Phase 2 — Qt PC client**: `QTcpSocket` + OpenCV decode, live view, gimbal
+      controls, file browser, snapshot.
+- [ ] **Phase 3 — Mobile client**: Vue 3 + Pinia + Capacitor; native TCP socket
+      (or MJPEG/WebSocket bridge fallback for the WebView).
+
+## Tech stack
+
+C++17 · OpenCV · V4L2 · Linux framebuffer · PWM sysfs · POSIX threads · TCP ·
+Qt (PC client) · Vue 3 + Capacitor (mobile) · GCC cross‑compile (`arm-linux-gnueabihf`).

@@ -1,0 +1,30 @@
+# ---- terminal (C++) build artifacts ----
+terminal/build/
+terminal/bin/
+*.o
+*.d
+
+# Runtime output: captured snapshots and the smoke-test frame
+terminal/captures/*
+!terminal/captures/.gitkeep
+smoke.jpg
+
+# ---- Qt Creator ----
+*.pro.user
+*.pro.user.*
+
+# ---- clients (Node, later phases) ----
+node_modules/
+dist/
+.vite/
+*.log
+
+# ---- Python (tools) ----
+__pycache__/
+*.pyc
+
+# ---- OS / editor cruft ----
+.DS_Store
+*.swp
+.idea/
+.vscode/

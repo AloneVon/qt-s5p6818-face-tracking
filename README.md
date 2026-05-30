@@ -84,12 +84,17 @@ compile time in [`terminal/src/app/Hardware.h`](terminal/src/app/Hardware.h):
 │  └─ src/
 │     ├─ net/     TcpClient (SEC1 over QTcpSocket)
 │     └─ ui/      VideoWidget, ControlPanel, FileBrowser, MainWindow
-├─ mobile-client/            # Phase 3 — Vue 3 + Capacitor mobile client (planned)
+├─ mobile-client/            # Phase 3 — Vue 3 + Pinia + Capacitor (SEC1 over WebSocket)
+│  └─ src/
+│     ├─ protocol.ts         # SEC1 encode/decode (TypeScript port of Protocol.h)
+│     ├─ stores/terminal.ts  # Pinia store: WebSocket, frame dispatch, controls
+│     └─ components/         # ConnectionBar, VideoView, ControlPad, FileGallery
 ├─ protocol/PROTOCOL.md      # wire protocol spec (mirrors terminal/src/net/Protocol.h)
 └─ tools/
    ├─ cross-build/README.md  # toolchain + OpenCV armhf cross‑build + deploy notes
    ├─ smoke_test.py          # connects, grabs one VIDEO_FRAME, writes smoke.jpg
-   └─ mock_terminal.py       # pure-Python SEC1 server to test the PC client on macOS
+   ├─ mock_terminal.py       # pure-Python SEC1 server (TCP, :8888) for the PC client
+   └─ mock_terminal_ws.py    # SEC1 server (WebSocket, :8889) for the mobile client
 ```
 
 ## Build & run (terminal)
@@ -140,8 +145,9 @@ JSON. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
       TCP streaming + control, file management, host‑dev mode.
 - [x] **Phase 2 — Qt PC client**: `QTcpSocket` + `QImage` JPEG decode (no OpenCV),
       live view, click-to-aim, gimbal d-pad, auto/manual toggle, file browser, snapshot.
-- [ ] **Phase 3 — Mobile client**: Vue 3 + Pinia + Capacitor; native TCP socket
-      (or MJPEG/WebSocket bridge fallback for the WebView).
+- [x] **Phase 3 — Mobile client**: Vue 3 + Pinia + Capacitor; SEC1 carried over a
+      WebSocket (one frame per binary message), live view, tap‑to‑aim, gimbal d‑pad,
+      auto/manual toggle, file gallery. See [`mobile-client/`](mobile-client/README.md).
 
 ## Tech stack
 

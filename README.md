@@ -80,12 +80,16 @@ compile time in [`terminal/src/app/Hardware.h`](terminal/src/app/Hardware.h):
 │     ├─ file/    FileManager
 │     ├─ app/     VisionThread, DisplayThread, BusinessThread, Hardware.h
 │     └─ main.cpp
-├─ pc-client/                # Phase 2 — Qt + OpenCV desktop client (planned)
+├─ pc-client/                # Phase 2 — Qt desktop client (pure Qt, no OpenCV)
+│  └─ src/
+│     ├─ net/     TcpClient (SEC1 over QTcpSocket)
+│     └─ ui/      VideoWidget, ControlPanel, FileBrowser, MainWindow
 ├─ mobile-client/            # Phase 3 — Vue 3 + Capacitor mobile client (planned)
 ├─ protocol/PROTOCOL.md      # wire protocol spec (mirrors terminal/src/net/Protocol.h)
 └─ tools/
    ├─ cross-build/README.md  # toolchain + OpenCV armhf cross‑build + deploy notes
-   └─ smoke_test.py          # connects, grabs one VIDEO_FRAME, writes smoke.jpg
+   ├─ smoke_test.py          # connects, grabs one VIDEO_FRAME, writes smoke.jpg
+   └─ mock_terminal.py       # pure-Python SEC1 server to test the PC client on macOS
 ```
 
 ## Build & run (terminal)
@@ -134,8 +138,8 @@ JSON. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
 
 - [x] **Phase 1 — Embedded terminal**: capture, detection, tracking, framebuffer UI,
       TCP streaming + control, file management, host‑dev mode.
-- [ ] **Phase 2 — Qt PC client**: `QTcpSocket` + OpenCV decode, live view, gimbal
-      controls, file browser, snapshot.
+- [x] **Phase 2 — Qt PC client**: `QTcpSocket` + `QImage` JPEG decode (no OpenCV),
+      live view, click-to-aim, gimbal d-pad, auto/manual toggle, file browser, snapshot.
 - [ ] **Phase 3 — Mobile client**: Vue 3 + Pinia + Capacitor; native TCP socket
       (or MJPEG/WebSocket bridge fallback for the WebView).
 

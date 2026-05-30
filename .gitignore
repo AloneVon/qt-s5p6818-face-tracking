@@ -9,9 +9,16 @@ terminal/captures/*
 !terminal/captures/.gitkeep
 smoke.jpg
 
-# ---- Qt Creator ----
+# ---- Qt Creator / qmake ----
 *.pro.user
 *.pro.user.*
+pc-client/build/
+.qmake.stash
+moc_*.cpp
+moc_predefs.h
+qrc_*.cpp
+ui_*.h
+*.app/
 
 # ---- clients (Node, later phases) ----
 node_modules/

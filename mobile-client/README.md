@@ -24,6 +24,17 @@ The frame format is unchanged (12‑byte big‑endian header + payload; video =
 > and port `8889`. For desktop development, the mock below is the same WebSocket
 > server with synthetic frames.
 
+### TLS (wss)
+
+Tick **TLS** in the connection bar to connect over `wss://` instead of `ws://`
+(default port `8444`). The terminal must be *built* with TLS and *configured* with
+a certificate — see the [main README](../README.md) and
+[`tools/gen-cert.sh`](../tools/gen-cert.sh). Unlike the PC client, there is **no
+in‑app cert pin**: the WebView/OS verifies the `wss` certificate itself and gives
+no in‑page override, so the self‑signed `server-cert.pem` must be **installed as
+trusted on the device** (or in the browser) *before* connecting — otherwise the
+handshake fails before the app ever sees it.
+
 ## Structure
 
 ```
@@ -35,7 +46,7 @@ mobile-client/
 │  ├─ protocol.ts          # SEC1 encode/decode (DataView, big‑endian)
 │  ├─ stores/terminal.ts   # Pinia store: WebSocket, frame dispatch, controls
 │  ├─ components/
-│  │  ├─ ConnectionBar.vue # host/port/token + connect, status dot
+│  │  ├─ ConnectionBar.vue # host/port/token/TLS + connect, status dot
 │  │  ├─ VideoView.vue     # <img> JPEG view + HUD + tap‑to‑aim (letterbox math)
 │  │  ├─ ControlPad.vue    # d‑pad (▲▼◀▶⌂), step slider, auto‑track checkbox
 │  │  └─ FileGallery.vue   # refresh/snapshot + per‑file save/delete
@@ -94,4 +105,5 @@ npx cap open android       # build/run from Android Studio / Xcode
 ```
 
 Use the device's LAN IP (not `127.0.0.1`) for the terminal host. For a plain
-`ws://` (non‑TLS) connection, Android needs cleartext enabled for that host.
+`ws://` (non‑TLS) connection, Android needs cleartext enabled for that host; use
+**wss** (see [TLS](#tls-wss) above) to encrypt the link and avoid that.

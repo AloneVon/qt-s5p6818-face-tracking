@@ -15,6 +15,7 @@ class FrameHub;
 class CommandQueue;
 class FileManager;
 class ClientRegistry;
+class TlsContext;  // defined only under SEC_ENABLE_TLS; held as an opaque pointer
 
 // Which byte transport accepted connections speak. Tcp hands the session a raw
 // socket (the PC client); WebSocket performs an RFC 6455 upgrade first (the
@@ -23,9 +24,13 @@ enum class Transport { Tcp, WebSocket };
 
 class TcpServer : public StoppableThread {
 public:
+    // `tls` (when non-null) makes every accepted connection a TLS session, so the
+    // same Transport gains an encrypted variant: Tcp+tls = SEC1-over-TLS,
+    // WebSocket+tls = wss. nullptr keeps the listener plaintext.
     TcpServer(int port, int maxClients, FrameHub& hub, CommandQueue& cmds,
               FileManager& files, ClientRegistry& registry, int streamFps,
-              std::string authToken = "", Transport transport = Transport::Tcp);
+              std::string authToken = "", Transport transport = Transport::Tcp,
+              TlsContext* tls = nullptr);
     ~TcpServer() override { stop(); join(); }
 
     // Create/bind/listen the socket. Call once before start(); returns false on
@@ -47,6 +52,7 @@ private:
     int             streamFps_;
     std::string     authToken_;
     Transport       transport_;
+    TlsContext*     tls_ = nullptr;   // non-null => accept TLS sessions
     int             listenFd_ = -1;
 };
 

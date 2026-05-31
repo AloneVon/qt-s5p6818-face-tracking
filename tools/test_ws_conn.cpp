@@ -13,6 +13,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "net/IByteStream.h"
 #include "net/WebSocketConn.h"
 #include "net/WebSocketProto.h"
 
@@ -83,7 +85,9 @@ int main() {
     ::setsockopt(sv[0], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     ::setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    WebSocketConn conn(sv[0]);                // class under test owns sv[0]
+    // Class under test, over a plaintext byte stream that owns sv[0]. (The TLS
+    // stream is the same shape; we can't exercise it here without a cert.)
+    WebSocketConn conn(std::make_unique<RawByteStream>(sv[0]));
 
     // 1) Handshake: send a real upgrade request, expect 101 + correct accept key
     //    (RFC 6455 §1.3 example key/accept).

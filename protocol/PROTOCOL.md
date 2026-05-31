@@ -5,8 +5,9 @@ client (Qt PC client, Vue/Capacitor mobile client). The C++ definition lives in
 `terminal/src/net/Protocol.h`; this document mirrors it for non-C++ clients.
 
 The same SEC1 message format is carried over **two transports** — raw TCP and
-WebSocket — described under [Transports](#transports). The message layout below
-is identical on both.
+WebSocket — each optionally wrapped in **TLS** (`wss` for WebSocket), described
+under [Transports](#transports). The message layout below is identical on all of
+them.
 
 All multi-byte integers are **big-endian (network order)**.
 
@@ -32,7 +33,9 @@ The terminal listens on two ports; both speak the SEC1 messages above.
 | transport | default port | client            | notes |
 |-----------|--------------|-------------------|-------|
 | TCP       | 8888         | Qt PC client      | SEC1 bytes straight on the socket. |
+| TCP + TLS | 8443         | Qt PC client      | The same bytes inside a TLS 1.2+ session. Opt-in — see [TLS](#tls-optional-transport-encryption). |
 | WebSocket | 8889         | Vue/Capacitor app | SEC1 carried in WebSocket frames; a browser/WebView can't open raw TCP. |
+| wss (WebSocket + TLS) | 8444 | Vue/Capacitor app | The same WebSocket carrier with the upgrade over TLS (`wss://`). Opt-in — see [TLS](#tls-optional-transport-encryption). |
 
 **WebSocket carrier.** Standard RFC 6455: the client opens `ws://<host>:8889`,
 the terminal completes the HTTP `Upgrade` handshake, then **each SEC1 message is
@@ -43,6 +46,39 @@ SEC1 byte stream. Ping/pong and close are handled by the transport and never
 surface to the SEC1 layer. There is no separate bridge process — the terminal
 serves WebSocket natively (`terminal/src/net/WebSocketConn.{h,cpp}`, codec in
 `WebSocketProto.h`); disable it with `Config::wsEnabled = false`.
+
+### TLS (optional transport encryption)
+
+The plaintext ports above carry SEC1 in the clear. The terminal can additionally
+open **TLS** versions of both transports so the link is encrypted end to end:
+**TCP + TLS** on 8443 (PC) is SEC1 inside a TLS 1.2+ session, and **wss** on 8444
+(mobile) is the same WebSocket carrier with the HTTP upgrade run over TLS
+(`wss://<host>:8444`). Internally these reuse the cleartext code paths unchanged —
+a TLS byte-stream layer sits *below* the SEC1 framing, so the message bytes are
+identical on every port.
+
+TLS is **doubly opt-in**: the terminal must be *built* with it (`make TLS=1` /
+`qmake CONFIG+=tls`, needs OpenSSL ≥ 1.1.0) **and** *configured* with a
+certificate and key (`Config::tlsCertFile` / `tlsKeyFile`). If either is missing,
+only the plaintext ports open and nothing else changes. The plaintext ports stay
+open even when TLS is enabled, so existing clients keep working.
+
+**Certificate model — self-signed + pin/trust.** Generate a self-signed cert+key
+with `tools/gen-cert.sh <board-ip-or-host>` (writes `server-cert.pem` +
+`server-key.pem`), and point `tlsCertFile`/`tlsKeyFile` at them. Then:
+
+- **PC client:** tick *TLS* and set *Cert* to `server-cert.pem`. The client
+  **pins** that exact certificate — it proceeds only if the terminal presents it,
+  byte for byte. Leaving *Cert* empty still encrypts but does **not**
+  authenticate the server (MITM-able; dev convenience only).
+- **Mobile client:** tick *TLS*. The WebView/OS verifies the `wss` certificate
+  itself and offers no in-page override, so the self-signed `server-cert.pem`
+  must be **installed as trusted on the device** first; otherwise the handshake
+  fails before the app ever runs.
+
+TLS and the shared token are independent and complementary: the token proves the
+*client* to the *terminal*, while cert pinning/trust proves the *terminal* to the
+*client*. Use both for a link that is encrypted and mutually authenticated.
 
 ## Message types
 
@@ -108,5 +144,6 @@ const payload = new Uint8Array(data, 12, len);
 ```
 
 > WebView JS cannot open raw TCP sockets, so the mobile client connects to the
-> terminal's **WebSocket** port (8889) and reads one SEC1 message per binary
-> `onmessage` event — see [Transports](#transports).
+> terminal's **WebSocket** port (8889, or **wss** on 8444 when TLS is enabled)
+> and reads one SEC1 message per binary `onmessage` event — see
+> [Transports](#transports).

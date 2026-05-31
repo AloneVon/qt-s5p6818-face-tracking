@@ -27,6 +27,11 @@ remote‑control the gimbal and browse recorded snapshots.
 - **Optional shared-token auth** — set `Config::authToken` to require every client to
   present a matching token in its `HELLO` before any video or control is served;
   constant-time compare, never logged. Empty (default) leaves the LAN open.
+- **Optional TLS / wss** — build with `make TLS=1` (OpenSSL) and point
+  `Config::tlsCertFile`/`tlsKeyFile` at a self-signed cert to also serve SEC1 over
+  **TLS** (PC, `:8443`) and **wss** (mobile, `:8444`). Doubly opt-in (build flag +
+  cert); plaintext ports stay open otherwise. The PC client *pins* the cert, the
+  mobile device *trusts* it; generate one with [`tools/gen-cert.sh`](tools/gen-cert.sh).
 - **File manager** — list / download (chunked) / delete / snapshot, with a path‑traversal guard.
 - **Host‑dev mode** — `-DDEV_HOST` swaps the three hardware classes for desktop stubs
   (`cv::VideoCapture`, `cv::imshow`, logging servo) so ~90% of the logic can be developed
@@ -98,6 +103,7 @@ compile time in [`terminal/src/app/Hardware.h`](terminal/src/app/Hardware.h):
 ├─ protocol/PROTOCOL.md      # wire protocol spec (mirrors terminal/src/net/Protocol.h)
 └─ tools/
    ├─ cross-build/README.md  # toolchain + OpenCV armhf cross‑build + deploy notes
+   ├─ gen-cert.sh            # generate a self-signed TLS cert+key for the terminal
    ├─ smoke_test.py          # connects, grabs one VIDEO_FRAME, writes smoke.jpg
    ├─ mock_terminal.py       # pure-Python SEC1 server (TCP, :8888) for the PC client
    └─ mock_terminal_ws.py    # SEC1 server (WebSocket, :8889) for the mobile client
@@ -145,9 +151,10 @@ limits, tracking gains, TCP port, stream FPS) live in one place:
 Video frames are raw JPEG with a 20‑byte subheader; control/file messages are
 JSON. The terminal serves SEC1 over **both raw TCP (`:8888`) and WebSocket
 (`:8889`)** — the latter for the browser/Capacitor mobile client, one SEC1 frame
-per binary message. An optional **shared token** (`Config::authToken`) gates both
-transports — clients send it in their `HELLO`. Full spec:
-[`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
+per binary message — and, when built with TLS and given a cert, over **TLS
+(`:8443`) and wss (`:8444`)** as well. An optional **shared token**
+(`Config::authToken`) gates every transport — clients send it in their `HELLO`.
+Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
 
 ## Roadmap
 

@@ -23,7 +23,8 @@ public:
     void setConnected(bool connected);
 
 signals:
-    void connectRequested(const QString& host, quint16 port, const QString& token);
+    void connectRequested(const QString& host, quint16 port, const QString& token,
+                          bool tls, const QString& certPath);
     void disconnectRequested();
     void panTiltStep(double dPanDeg, double dTiltDeg);  // relative nudge
     void homeRequested();                               // re-center the gimbal
@@ -36,6 +37,8 @@ private:
     QLineEdit*      host_;
     QSpinBox*       port_;
     QLineEdit*      token_;
+    QCheckBox*      tls_;       // encrypt the link (connect to the TLS port)
+    QLineEdit*      certPath_;  // PEM cert to pin; empty = unverified (MITM-able)
     QPushButton*    connectBtn_;
     QDoubleSpinBox* step_;
     QCheckBox*      autoTrack_;

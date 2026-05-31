@@ -31,6 +31,18 @@ ifeq ($(DEV_HOST),1)
 CXXFLAGS += -DDEV_HOST
 endif
 
+# TLS (OpenSSL) — opt-in. `make TLS=1` compiles in SEC1-over-TLS + wss and links
+# libssl/libcrypto via pkg-config. Cross builds add TLS=1 and need an OpenSSL
+# (>= 1.1.0) in the armhf sysroot (see tools/cross-build/README.md). Default
+# (TLS unset) builds with no OpenSSL dependency, exactly as before.
+TLS ?=
+ifeq ($(TLS),1)
+OPENSSL_CFLAGS := $(shell $(PKG) --cflags openssl)
+OPENSSL_LIBS   := $(shell $(PKG) --libs   openssl)
+CXXFLAGS += -DSEC_ENABLE_TLS $(OPENSSL_CFLAGS)
+LDLIBS   += $(OPENSSL_LIBS)
+endif
+
 SRC := $(shell find src -name '*.cpp')
 OBJ := $(patsubst src/%.cpp,build/%.o,$(SRC))
 BIN := bin/terminal
@@ -44,7 +56,7 @@ host:
 $(BIN): $(OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(OBJ) -o $@ $(LDLIBS)
-	@echo "built -> $@  (DEV_HOST=$(DEV_HOST), CROSS=$(CROSS), opencv=$(OPENCV_PC))"
+	@echo "built -> $@  (DEV_HOST=$(DEV_HOST), CROSS=$(CROSS), opencv=$(OPENCV_PC), TLS=$(TLS))"
 
 build/%.o: src/%.cpp
 	@mkdir -p $(dir $@)

@@ -101,6 +101,16 @@ fieldset:disabled {
   flex: 1 1 140px;
   min-width: 0;
 }
+.conn .tls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  user-select: none;
+  white-space: nowrap;
+}
 .conn .go.on {
   border-color: var(--accent);
   color: var(--accent);

@@ -67,6 +67,19 @@ struct Config {
     // token-less client working. Set a non-empty value to lock the terminal down.
     std::string authToken = "";
 
+    // ---- TLS (transport encryption; opt-in) -------------------------------
+    // Encrypts the wire so the token and video can't be sniffed on the LAN. When
+    // both a cert and key are set AND the binary was built with TLS support
+    // (`make TLS=1` / `qmake CONFIG+=tls`), the terminal opens *additional*
+    // encrypted listeners — SEC1-over-TLS on tlsTcpPort (PC) and wss on tlsWsPort
+    // (mobile) — alongside the plaintext ports above. Empty (default) = no TLS:
+    // only the cleartext ports are served, so the mocks/smoke-test keep working.
+    // The cert is self-signed (tools/gen-cert.sh); clients pin/trust it.
+    std::string tlsCertFile = "";    // PEM certificate chain
+    std::string tlsKeyFile  = "";    // PEM private key (readable only by the terminal)
+    int         tlsTcpPort  = 8443;  // SEC1 over TLS  (PC client)
+    int         tlsWsPort   = 8444;  // SEC1 over wss  (mobile client)
+
     // ---- File manager -----------------------------------------------------
     std::string captureDir = "captures";
     bool   autoSnapshotOnFace = false;   // debounced snapshot when a face appears

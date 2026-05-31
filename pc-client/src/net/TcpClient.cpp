@@ -3,7 +3,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QTcpSocket>
+#include <QSslCertificate>
+#include <QSslSocket>
+#include <QStringList>
 
 #include "net/Protocol.h"  // from terminal/src (INCLUDEPATH) — shared framing
 
@@ -20,11 +22,15 @@ QByteArray toJson(const QJsonObject& o) {
 }  // namespace
 
 TcpClient::TcpClient(QObject* parent)
-    : QObject(parent), sock_(new QTcpSocket(this)) {
-    connect(sock_, &QTcpSocket::readyRead, this, &TcpClient::onReadyRead);
-    connect(sock_, &QTcpSocket::connected, this, &TcpClient::onConnected);
-    connect(sock_, &QTcpSocket::disconnected, this, &TcpClient::disconnected);
+    : QObject(parent), sock_(new QSslSocket(this)) {
+    connect(sock_, &QSslSocket::readyRead, this, &TcpClient::onReadyRead);
+    connect(sock_, &QSslSocket::connected, this, &TcpClient::onConnected);
+    connect(sock_, &QSslSocket::encrypted, this, &TcpClient::onEncrypted);
+    connect(sock_, &QSslSocket::disconnected, this, &TcpClient::disconnected);
     connect(sock_, &QAbstractSocket::errorOccurred, this, &TcpClient::onSocketError);
+    // sslErrors is overloaded (signal vs. the sslErrors() getter) — disambiguate.
+    connect(sock_, QOverload<const QList<QSslError>&>::of(&QSslSocket::sslErrors),
+            this, &TcpClient::onSslErrors);
 }
 
 TcpClient::~TcpClient() = default;
@@ -34,12 +40,36 @@ bool TcpClient::isConnected() const {
 }
 
 void TcpClient::connectToTerminal(const QString& host, quint16 port,
-                                  const QString& token) {
+                                  const QString& token, bool tls,
+                                  const QString& certPath) {
     token_ = token;
+    tls_ = tls;
+    pinnedCert_ = QSslCertificate();  // clear any pin from a prior connection
     rx_.clear();
     downloads_.clear();
     sock_->abort();
-    sock_->connectToHost(host, port);
+
+    if (!tls_) {
+        sock_->connectToHost(host, port);
+        return;
+    }
+
+    if (!QSslSocket::supportsSsl()) {
+        emit errorOccurred(
+            QStringLiteral("TLS requested but this Qt build has no SSL support"));
+        return;
+    }
+    if (!certPath.isEmpty()) {  // pin this exact self-signed cert
+        const QList<QSslCertificate> certs =
+            QSslCertificate::fromPath(certPath, QSsl::Pem);
+        if (certs.isEmpty()) {
+            emit errorOccurred(
+                QStringLiteral("could not load pinned cert from %1").arg(certPath));
+            return;
+        }
+        pinnedCert_ = certs.first();
+    }
+    sock_->connectToHostEncrypted(host, port);
 }
 
 void TcpClient::disconnectFromTerminal() {
@@ -94,10 +124,41 @@ void TcpClient::requestSnapshot() {
 // ---- incoming ------------------------------------------------------------
 
 void TcpClient::onConnected() {
+    // Plaintext: the TCP connection is ready, so HELLO now. In TLS mode we wait
+    // for encrypted() instead — sending before the handshake would leak HELLO.
+    if (!tls_) sendHello();
+}
+
+void TcpClient::onEncrypted() {
+    sendHello();  // TLS handshake done; the channel is now safe for HELLO
+}
+
+void TcpClient::sendHello() {
     QJsonObject hello{{"role", "pc"}, {"ver", 1}};
     if (!token_.isEmpty()) hello.insert("token", token_);
     sendMessage(static_cast<quint16>(MsgType::Hello), toJson(hello));
     emit connected();
+}
+
+void TcpClient::onSslErrors(const QList<QSslError>& errors) {
+    // A self-signed cert legitimately fails CA + hostname verification, so when
+    // the user pins a cert we trust the connection iff the peer presents that
+    // exact certificate. Anything else is a possible MITM and we refuse.
+    if (!pinnedCert_.isNull()) {
+        if (sock_->peerCertificate() == pinnedCert_) {
+            sock_->ignoreSslErrors();
+        } else {
+            emit errorOccurred(QStringLiteral(
+                "server certificate does not match the pinned cert; refusing"));
+        }
+        return;
+    }
+    // No pin: encrypted but unauthenticated (dev convenience). Warn, then go on.
+    QStringList msgs;
+    for (const QSslError& e : errors) msgs << e.errorString();
+    emit errorOccurred(QStringLiteral("TLS warning (unverified, MITM-able): %1")
+                           .arg(msgs.join(QStringLiteral("; "))));
+    sock_->ignoreSslErrors();
 }
 
 void TcpClient::onSocketError() {

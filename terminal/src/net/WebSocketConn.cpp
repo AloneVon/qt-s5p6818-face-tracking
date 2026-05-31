@@ -6,10 +6,6 @@
 #include <cstring>
 #include <string>
 
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include "SocketUtil.h"
 #include "WebSocketProto.h"
 #include "../core/Log.h"
 
@@ -42,6 +38,10 @@ std::string headerValue(const std::string& req, const char* name) {
 } // namespace
 
 bool WebSocketConn::handshake() {
+    // Below us the byte stream negotiates first: TLS does its SSL_accept here
+    // (no-op for a raw socket), so the HTTP upgrade rides the encrypted channel.
+    if (!stream_->handshake()) return false;
+
     // Read the HTTP upgrade request up to the blank-line terminator. A read
     // timeout (set by the caller before handshake) bounds a slow/idle client.
     std::string req;
@@ -51,7 +51,7 @@ bool WebSocketConn::handshake() {
             LOGW("WebSocketConn: handshake headers too large");
             return false;
         }
-        ssize_t n = ::recv(fd_, tmp, sizeof(tmp), 0);
+        int n = stream_->read(tmp, sizeof(tmp));
         if (n > 0) { req.append(reinterpret_cast<char*>(tmp), static_cast<std::size_t>(n)); continue; }
         if (n == 0) return false;                 // peer closed mid-handshake
         if (errno == EINTR) continue;
@@ -74,7 +74,7 @@ bool WebSocketConn::handshake() {
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Accept: " + ws::acceptKey(key) + "\r\n\r\n";
-    if (!netutil::sendAll(fd_, reinterpret_cast<const uint8_t*>(resp.data()), resp.size()))
+    if (!stream_->writeAll(reinterpret_cast<const uint8_t*>(resp.data()), resp.size()))
         return false;
 
     LOGI("WebSocketConn: upgraded");
@@ -92,8 +92,8 @@ int WebSocketConn::recv(uint8_t* buf, std::size_t cap) {
     if (closed_) return 0;                         // close already processed
 
     uint8_t tmp[8192];
-    ssize_t n = ::recv(fd_, tmp, sizeof(tmp), 0);
-    if (n == 0) return 0;                          // orderly TCP shutdown
+    int n = stream_->read(tmp, sizeof(tmp));
+    if (n == 0) return 0;                          // orderly shutdown
     if (n < 0) return -1;                          // errno preserved for the caller
     rx_.insert(rx_.end(), tmp, tmp + n);
 
@@ -147,17 +147,17 @@ void WebSocketConn::drainFrames() {
 bool WebSocketConn::send(const uint8_t* data, std::size_t len) {
     std::vector<uint8_t> frame;
     ws::encodeFrame(frame, ws::kOpBinary, data, len);   // one SEC1 frame → one message
-    return netutil::sendAll(fd_, frame.data(), frame.size());
+    return stream_->writeAll(frame.data(), frame.size());
 }
 
 bool WebSocketConn::sendControl(uint8_t opcode, const uint8_t* data, std::size_t len) {
     std::vector<uint8_t> frame;
     ws::encodeFrame(frame, opcode, data, len);
-    return netutil::sendAll(fd_, frame.data(), frame.size());
+    return stream_->writeAll(frame.data(), frame.size());
 }
 
 void WebSocketConn::close() {
-    if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    stream_->close();
 }
 
 } // namespace sec

@@ -54,10 +54,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     // ---- UI intent -> client ---------------------------------------------
     connect(controls_, &ControlPanel::connectRequested, this,
-            [this](const QString& host, quint16 port, const QString& token) {
+            [this](const QString& host, quint16 port, const QString& token,
+                   bool tls, const QString& certPath) {
                 peer_ = QStringLiteral("%1:%2").arg(host).arg(port);
-                connLabel_->setText(tr("Connecting to %1…").arg(peer_));
-                tcp_->connectToTerminal(host, port, token);
+                connLabel_->setText(tr("Connecting to %1%2…")
+                                        .arg(peer_, tls ? QStringLiteral(" (TLS)")
+                                                        : QString()));
+                tcp_->connectToTerminal(host, port, token, tls, certPath);
             });
     connect(controls_, &ControlPanel::disconnectRequested,
             tcp_, &TcpClient::disconnectFromTerminal);

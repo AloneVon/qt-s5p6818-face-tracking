@@ -45,9 +45,11 @@ export const useTerminal = defineStore('terminal', () => {
 
   const connected = computed(() => status.value === 'connected');
 
-  function connect(host: string, port: number, token = '') {
+  // tls picks wss:// over ws://. The self-signed cert must already be trusted by
+  // the device/WebView — there's no in-page override for a failed TLS handshake.
+  function connect(host: string, port: number, token = '', tls = false) {
     disconnect();
-    const url = `ws://${host}:${port}`;
+    const url = `${tls ? 'wss' : 'ws'}://${host}:${port}`;
     peer.value = `${host}:${port}`;
     error.value = '';
     status.value = 'connecting';

@@ -1,36 +1,36 @@
-// TcpConn.h — IConn over a plain TCP socket: a 1:1 passthrough of the raw
-// ::recv / sendAll / ::close calls the session used before the transport was
-// abstracted, so the TCP path behaves exactly as it always has.
+// TcpConn.h — IConn for a client that speaks SEC1 straight on the byte stream
+// (no extra framing). It is a thin passthrough to its IByteStream, so the same
+// class serves both plaintext TCP (RawByteStream) and TLS (TlsByteStream); the
+// transport decides which stream it is handed.
 #pragma once
 
-#include <sys/socket.h>
-#include <unistd.h>
+#include <memory>
+#include <utility>
 
+#include "IByteStream.h"
 #include "IConn.h"
-#include "SocketUtil.h"
 
 namespace sec {
 
 class TcpConn : public IConn {
 public:
-    explicit TcpConn(int fd) : fd_(fd) {}
+    explicit TcpConn(std::unique_ptr<IByteStream> stream)
+        : stream_(std::move(stream)) {}
     ~TcpConn() override { close(); }
 
-    int  fd() const override { return fd_; }
-    bool handshake() override { return true; }  // nothing to negotiate
+    int  fd() const override { return stream_->fd(); }
+    bool handshake() override { return stream_->handshake(); }  // TLS accept, or no-op
 
     int recv(uint8_t* buf, std::size_t cap) override {
-        return static_cast<int>(::recv(fd_, buf, cap, 0));  // errno preserved for the caller
+        return stream_->read(buf, cap);          // errno preserved for the caller
     }
     bool send(const uint8_t* data, std::size_t len) override {
-        return netutil::sendAll(fd_, data, len);
+        return stream_->writeAll(data, len);
     }
-    void close() override {
-        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
-    }
+    void close() override { stream_->close(); }
 
 private:
-    int fd_;
+    std::unique_ptr<IByteStream> stream_;
 };
 
 } // namespace sec

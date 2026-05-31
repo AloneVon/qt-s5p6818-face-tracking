@@ -39,6 +39,22 @@ cmake --build opencv/build-armhf -j"$(nproc)"
 cmake --install opencv/build-armhf
 ```
 
+### 2b-tls. OpenSSL for armhf (only if building with `TLS=1`)
+
+The optional TLS / wss listeners need **OpenSSL ≥ 1.1.0** for the target. Skip
+this unless you build with `TLS=1`. Easiest is the Debian/Ubuntu armhf package
+into your sysroot:
+
+```bash
+sudo dpkg --add-architecture armhf && sudo apt update
+sudo apt install libssl-dev:armhf
+```
+
+Or cross-build it from source
+(`./Configure linux-armv4 --cross-compile-prefix=arm-linux-gnueabihf- --prefix=/opt/armhf`).
+Either way, `pkg-config --exists openssl` must succeed against the same
+`PKG_CONFIG_PATH` / sysroot you pass to `make`.
+
 ### 2c. Build the terminal
 
 ```bash
@@ -47,6 +63,16 @@ make CROSS=arm-linux-gnueabihf- \
      PKG_CONFIG_PATH=/opt/armhf/lib/pkgconfig \
      PKG_CONFIG_SYSROOT_DIR=/opt/armhf
 file bin/terminal     # => ELF 32-bit ARM
+```
+
+For an encrypted build, add `TLS=1` (compiles in SEC1-over-TLS + wss; needs the
+armhf OpenSSL from 2b-tls). Then point `Config::tlsCertFile`/`tlsKeyFile` at a
+cert from [`tools/gen-cert.sh`](../gen-cert.sh) to open the `:8443`/`:8444` ports:
+
+```bash
+make TLS=1 CROSS=arm-linux-gnueabihf- \
+     PKG_CONFIG_PATH=/opt/armhf/lib/pkgconfig \
+     PKG_CONFIG_SYSROOT_DIR=/opt/armhf
 ```
 
 ### 2d. Deploy + run on the board

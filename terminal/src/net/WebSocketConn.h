@@ -16,19 +16,23 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <vector>
 
+#include "IByteStream.h"
 #include "IConn.h"
 
 namespace sec {
 
 class WebSocketConn : public IConn {
 public:
-    explicit WebSocketConn(int fd) : fd_(fd) {}
+    explicit WebSocketConn(std::unique_ptr<IByteStream> stream)
+        : stream_(std::move(stream)) {}
     ~WebSocketConn() override { close(); }
 
-    int  fd() const override { return fd_; }
-    bool handshake() override;                              // HTTP Upgrade → 101
+    int  fd() const override { return stream_->fd(); }
+    bool handshake() override;                              // TLS accept → HTTP Upgrade → 101
     int  recv(uint8_t* buf, std::size_t cap) override;      // SEC1 bytes; see IConn
     bool send(const uint8_t* data, std::size_t len) override;  // one binary message
     void close() override;
@@ -40,7 +44,7 @@ private:
     // app_, answer pings, and note a close. Leaves any partial frame in rx_.
     void drainFrames();
 
-    int fd_;
+    std::unique_ptr<IByteStream> stream_;  // raw socket or TLS, below the WS framing
     bool closed_ = false;        // peer close seen/sent — recv() now reports EOF
     std::vector<uint8_t> rx_;    // raw socket bytes not yet de-framed
     std::vector<uint8_t> app_;   // de-framed SEC1 bytes awaiting recv()

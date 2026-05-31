@@ -30,6 +30,9 @@
 #include "app/DisplayThread.h"
 #include "app/BusinessThread.h"
 #include "net/TcpServer.h"
+#ifdef SEC_ENABLE_TLS
+#include "net/TlsConn.h"
+#endif
 
 namespace {
 std::atomic<bool> g_stop{false};
@@ -120,14 +123,61 @@ int main() {
         }
     }
 
+    // Optional encrypted twins of the two ports above (TLS for the PC client, wss
+    // for the mobile client). Opened only when a cert+key are configured and this
+    // binary was built with TLS support. They share the registry and token gate,
+    // so maxClients and auth span every transport. The plaintext ports stay open
+    // (TLS is opt-in/additive), so the mocks and smoke-test are unaffected.
+    // `tls` is declared before the servers so the SSL_CTX outlives them.
+#ifdef SEC_ENABLE_TLS
+    std::unique_ptr<TlsContext> tls;
+#endif
+    std::unique_ptr<TcpServer> tlsServer, wssServer;
+#ifdef SEC_ENABLE_TLS
+    if (!cfg.tlsCertFile.empty() && !cfg.tlsKeyFile.empty()) {
+        tls = TlsContext::create(cfg.tlsCertFile, cfg.tlsKeyFile);
+        if (!tls) {
+            LOGE("main: TLS cert/key set but context failed to load; TLS disabled");
+        } else {
+            tlsServer = std::make_unique<TcpServer>(cfg.tlsTcpPort, cfg.maxClients, hub,
+                                                    cmds, files, registry, cfg.streamFps,
+                                                    cfg.authToken, Transport::Tcp, tls.get());
+            if (!tlsServer->bindAndListen()) {
+                LOGW("main: TLS bind failed on port %d; secure PC client disabled",
+                     cfg.tlsTcpPort);
+                tlsServer.reset();
+            }
+            if (cfg.wsEnabled) {
+                wssServer = std::make_unique<TcpServer>(cfg.tlsWsPort, cfg.maxClients, hub,
+                                                        cmds, files, registry, cfg.streamFps,
+                                                        cfg.authToken, Transport::WebSocket,
+                                                        tls.get());
+                if (!wssServer->bindAndListen()) {
+                    LOGW("main: wss bind failed on port %d; secure mobile client disabled",
+                         cfg.tlsWsPort);
+                    wssServer.reset();
+                }
+            }
+        }
+    }
+#else
+    if (!cfg.tlsCertFile.empty())
+        LOGW("main: TLS cert configured but binary built without TLS support "
+             "(rebuild with TLS=1 / CONFIG+=tls); ignoring");
+#endif
+
     vision.start();
     displayThread.start();
     business.start();
     server.start();
-    if (wsServer) wsServer->start();
-    const std::string wsNote = wsServer ? " + WS " + std::to_string(cfg.wsPort) : "";
+    if (wsServer)  wsServer->start();
+    if (tlsServer) tlsServer->start();
+    if (wssServer) wssServer->start();
+    std::string extra = wsServer ? " + WS " + std::to_string(cfg.wsPort) : "";
+    if (tlsServer) extra += " + TLS " + std::to_string(cfg.tlsTcpPort);
+    if (wssServer) extra += " + WSS " + std::to_string(cfg.tlsWsPort);
     LOGI("main: terminal running on TCP %d%s (%dx%d). Ctrl-C to stop.",
-         cfg.tcpPort, wsNote.c_str(), cfg.captureWidth, cfg.captureHeight);
+         cfg.tcpPort, extra.c_str(), cfg.captureWidth, cfg.captureHeight);
 
     while (!g_stop.load())
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -137,7 +187,9 @@ int main() {
     // Stop the network first (no new frames pushed), then the producer/consumer
     // threads, then drop any still-connected clients, then release hardware.
     server.stop();        server.join();
-    if (wsServer) { wsServer->stop(); wsServer->join(); }
+    if (wsServer)  { wsServer->stop();  wsServer->join(); }
+    if (tlsServer) { tlsServer->stop(); tlsServer->join(); }
+    if (wssServer) { wssServer->stop(); wssServer->join(); }
     vision.stop();        vision.join();
     business.stop();      business.join();
     displayThread.stop(); displayThread.join();

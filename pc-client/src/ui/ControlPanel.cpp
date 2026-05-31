@@ -22,12 +22,18 @@ ControlPanel::ControlPanel(QWidget* parent) : QWidget(parent) {
     token_ = new QLineEdit(connBox);
     token_->setEchoMode(QLineEdit::Password);
     token_->setPlaceholderText(tr("if required"));
+    tls_ = new QCheckBox(tr("Encrypt (TLS)"), connBox);
+    certPath_ = new QLineEdit(connBox);
+    certPath_->setPlaceholderText(tr("server-cert.pem to pin (optional)"));
+    certPath_->setEnabled(false);  // only meaningful with TLS on
     connectBtn_ = new QPushButton(connBox);
 
     auto* connForm = new QFormLayout(connBox);
     connForm->addRow(tr("Host"), host_);
     connForm->addRow(tr("Port"), port_);
     connForm->addRow(tr("Token"), token_);
+    connForm->addRow(tr("TLS"), tls_);
+    connForm->addRow(tr("Cert"), certPath_);
     connForm->addRow(connectBtn_);
 
     // ---- Gimbal d-pad ----------------------------------------------------
@@ -85,6 +91,14 @@ ControlPanel::ControlPanel(QWidget* parent) : QWidget(parent) {
 
     connect(autoTrack_, &QCheckBox::toggled, this, &ControlPanel::modeChanged);
 
+    connect(tls_, &QCheckBox::toggled, this, [this](bool on) {
+        certPath_->setEnabled(on);
+        // Convenience: hop between the known default ports, but never clobber a
+        // port the user typed themselves.
+        if (on && port_->value() == 8888) port_->setValue(8443);
+        else if (!on && port_->value() == 8443) port_->setValue(8888);
+    });
+
     setConnected(false);
 }
 
@@ -94,7 +108,9 @@ void ControlPanel::onConnectClicked() {
     else
         emit connectRequested(host_->text().trimmed(),
                               static_cast<quint16>(port_->value()),
-                              token_->text());
+                              token_->text(),
+                              tls_->isChecked(),
+                              certPath_->text().trimmed());
 }
 
 void ControlPanel::setConnected(bool connected) {
@@ -103,6 +119,8 @@ void ControlPanel::setConnected(bool connected) {
     host_->setEnabled(!connected);
     port_->setEnabled(!connected);
     token_->setEnabled(!connected);
+    tls_->setEnabled(!connected);
+    certPath_->setEnabled(!connected && tls_->isChecked());
     gimbalBox_->setEnabled(connected);
     modeBox_->setEnabled(connected);
 }

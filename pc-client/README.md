@@ -16,9 +16,9 @@ Framing is shared with the terminal: the client includes
 
 | Class | File | Responsibility |
 |-------|------|----------------|
-| `TcpClient`   | `src/net/TcpClient.{h,cpp}`   | SEC1 framing over `QTcpSocket`; decodes frames, reassembles chunked downloads, builds JSON control messages |
+| `TcpClient`   | `src/net/TcpClient.{h,cpp}`   | SEC1 framing over `QSslSocket` (plaintext or TLS); decodes frames, reassembles chunked downloads, builds JSON control messages; pins a self-signed cert in TLS mode |
 | `VideoWidget` | `src/ui/VideoWidget.{h,cpp}`  | Paints the latest frame letterboxed; click emits a normalized aim offset |
-| `ControlPanel`| `src/ui/ControlPanel.{h,cpp}` | Connection fields, pan/tilt d-pad + step size, auto/manual toggle |
+| `ControlPanel`| `src/ui/ControlPanel.{h,cpp}` | Connection fields (host/port/token/TLS + cert), pan/tilt d-pad + step size, auto/manual toggle |
 | `FileBrowser` | `src/ui/FileBrowser.{h,cpp}`  | Capture list with refresh / download / delete / snapshot |
 | `MainWindow`  | `src/ui/MainWindow.{h,cpp}`   | Assembles the UI, wires widget intent to `TcpClient`, shows status (connection / resolution / client-side FPS) |
 
@@ -53,6 +53,24 @@ make
 ```
 
 Enter the terminal's host/port (default `127.0.0.1:8888`) and click **Connect**.
+
+## TLS (optional)
+
+To encrypt the link, tick **TLS** and connect to the terminal's TLS port (default
+`8443`). Toggling TLS auto-switches the port between the plaintext `8888` and TLS
+`8443` defaults (it won't clobber a port you typed yourself).
+
+Because the terminal uses a **self-signed** certificate, set the **Cert** field to
+the matching `server-cert.pem` (from [`tools/gen-cert.sh`](../tools/gen-cert.sh)).
+The client then **pins** that exact certificate — it proceeds only if the terminal
+presents it, byte for byte, and refuses anything else. (A self-signed cert can't be
+validated by a CA, so the pin *is* the trust anchor.) Leaving **Cert** empty still
+encrypts the connection but does **not** authenticate the server — it's MITM-able,
+a dev convenience only, and a warning is surfaced in the status bar.
+
+> Qt's TLS is backed by **OpenSSL at runtime**. If `QSslSocket::supportsSsl()` is
+> false (no OpenSSL found by Qt), the client reports that instead of connecting —
+> install OpenSSL libs if you hit it.
 
 ## Test without a board
 

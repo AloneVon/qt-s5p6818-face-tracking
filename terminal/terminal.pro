@@ -25,3 +25,10 @@ LIBS += -lpthread
 
 # qmake CONFIG+=dev_host  -> host stubs (window display, cv::VideoCapture, no PWM)
 dev_host: DEFINES += DEV_HOST
+
+# qmake CONFIG+=tls  -> compile in SEC1-over-TLS + wss. Needs OpenSSL (>= 1.1.0:
+# libssl/libcrypto) for the target; cross builds need it in the armhf sysroot.
+tls {
+    DEFINES  += SEC_ENABLE_TLS
+    PKGCONFIG += openssl
+}

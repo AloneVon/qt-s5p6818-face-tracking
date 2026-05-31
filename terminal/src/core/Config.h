@@ -54,6 +54,10 @@ struct Config {
 
     // ---- Networking -------------------------------------------------------
     int    tcpPort        = 8888;
+    // SEC1 over WebSocket for the browser/Capacitor mobile client, which cannot
+    // open a raw TCP socket. Same protocol, one SEC1 frame per binary message.
+    bool   wsEnabled      = true;
+    int    wsPort         = 8889;
     int    streamFps      = 15;      // frames/sec pushed to each client
     int    jpegQuality    = 70;      // cv::imencode quality 0..100
     int    maxClients     = 8;

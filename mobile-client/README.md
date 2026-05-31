@@ -7,7 +7,7 @@ all over the same **SEC1** wire protocol the terminal and PC client speak.
 ## Transport: SEC1 over WebSocket
 
 A browser / Capacitor WebView **cannot open a raw TCP socket**, so this client
-talks to the terminal over a **WebSocket that carries SEC1 frames**. The bridge
+talks to the terminal over a **WebSocket that carries SEC1 frames**. The terminal
 sends **exactly one SEC1 frame per WebSocket binary message**, which means —
 unlike the TCP clients — there is *no* cross‑message stream reassembly: each
 `onmessage` `ArrayBuffer` is a complete frame. File transfers are still chunked
@@ -19,9 +19,10 @@ The frame format is unchanged (12‑byte big‑endian header + payload; video =
 [`src/protocol.ts`](src/protocol.ts), which mirrors
 [`terminal/src/net/Protocol.h`](../terminal/src/net/Protocol.h).
 
-> On the board, run a tiny TCP↔WebSocket bridge in front of the terminal's
-> TCP server (or add a WS listener to it). For desktop development, the mock
-> below *is* a WebSocket server, so no bridge is needed.
+> The terminal serves WebSocket **natively** on port `8889` (alongside TCP on
+> `8888`) — no external bridge needed. Point this client at the board's LAN IP
+> and port `8889`. For desktop development, the mock below is the same WebSocket
+> server with synthetic frames.
 
 ## Structure
 

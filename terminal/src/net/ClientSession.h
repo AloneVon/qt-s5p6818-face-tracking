@@ -7,10 +7,12 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "../core/ISession.h"
+#include "IConn.h"
 #include "Protocol.h"
 
 namespace sec {
@@ -21,8 +23,8 @@ class FileManager;
 
 class ClientSession : public ISession {
 public:
-    ClientSession(int fd, std::string peer, FrameHub& hub, CommandQueue& cmds,
-                  FileManager& files, int streamFps);
+    ClientSession(std::unique_ptr<IConn> conn, std::string peer, FrameHub& hub,
+                  CommandQueue& cmds, FileManager& files, int streamFps);
 
     void run();  // blocking; executed on the session's own thread
 
@@ -37,7 +39,7 @@ private:
     void sendFileList();
     void sendFile(const std::string& name);
 
-    int          fd_;
+    std::unique_ptr<IConn> conn_;
     std::string  peer_;
     FrameHub&    hub_;
     CommandQueue& cmds_;

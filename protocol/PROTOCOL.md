@@ -1,8 +1,12 @@
 # Wire Protocol (SEC1)
 
-Single source of truth for the TCP protocol between the **terminal** and every
+Single source of truth for the protocol between the **terminal** and every
 client (Qt PC client, Vue/Capacitor mobile client). The C++ definition lives in
 `terminal/src/net/Protocol.h`; this document mirrors it for non-C++ clients.
+
+The same SEC1 message format is carried over **two transports** — raw TCP and
+WebSocket — described under [Transports](#transports). The message layout below
+is identical on both.
 
 All multi-byte integers are **big-endian (network order)**.
 
@@ -20,6 +24,25 @@ Every message is a 12-byte header followed by `length` payload bytes:
 A reader must: read 12 bytes, validate magic, read `length` payload bytes,
 dispatch on `type`, repeat. (TCP is a stream — always loop until you have the
 full header, then the full payload.)
+
+## Transports
+
+The terminal listens on two ports; both speak the SEC1 messages above.
+
+| transport | default port | client            | notes |
+|-----------|--------------|-------------------|-------|
+| TCP       | 8888         | Qt PC client      | SEC1 bytes straight on the socket. |
+| WebSocket | 8889         | Vue/Capacitor app | SEC1 carried in WebSocket frames; a browser/WebView can't open raw TCP. |
+
+**WebSocket carrier.** Standard RFC 6455: the client opens `ws://<host>:8889`,
+the terminal completes the HTTP `Upgrade` handshake, then **each SEC1 message is
+carried as exactly one binary WebSocket message** (terminal→client) — so a
+client decodes one SEC1 frame per `onmessage` and never reassembles across
+messages. Client→terminal messages are de-framed (and unmasked) back into the
+SEC1 byte stream. Ping/pong and close are handled by the transport and never
+surface to the SEC1 layer. There is no separate bridge process — the terminal
+serves WebSocket natively (`terminal/src/net/WebSocketConn.{h,cpp}`, codec in
+`WebSocketProto.h`); disable it with `Config::wsEnabled = false`.
 
 ## Message types
 
@@ -65,5 +88,6 @@ const payload = new Uint8Array(data, 12, len);
 // VIDEO_FRAME: jpeg = payload.subarray(20); show via Blob -> <img>
 ```
 
-> WebView JS cannot open raw TCP sockets. The mobile client uses a Capacitor
-> native TCP plugin, or the terminal's optional MJPEG/WebSocket bridge.
+> WebView JS cannot open raw TCP sockets, so the mobile client connects to the
+> terminal's **WebSocket** port (8889) and reads one SEC1 message per binary
+> `onmessage` event — see [Transports](#transports).

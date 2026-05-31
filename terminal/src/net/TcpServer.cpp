@@ -14,16 +14,25 @@
 #include <thread>
 
 #include "ClientSession.h"
+#include "TcpConn.h"
+#include "WebSocketConn.h"
 #include "../core/ClientRegistry.h"
 #include "../core/Log.h"
 
 namespace sec {
 
+namespace {
+const char* transportName(Transport t) {
+    return t == Transport::WebSocket ? "ws" : "tcp";
+}
+}  // namespace
+
 TcpServer::TcpServer(int port, int maxClients, FrameHub& hub, CommandQueue& cmds,
-                     FileManager& files, ClientRegistry& registry, int streamFps)
+                     FileManager& files, ClientRegistry& registry, int streamFps,
+                     Transport transport)
     : port_(port), maxClients_(maxClients > 0 ? maxClients : 1),
       hub_(hub), cmds_(cmds), files_(files), registry_(registry),
-      streamFps_(streamFps) {}
+      streamFps_(streamFps), transport_(transport) {}
 
 bool TcpServer::bindAndListen() {
     listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -52,7 +61,8 @@ bool TcpServer::bindAndListen() {
         listenFd_ = -1;
         return false;
     }
-    LOGI("TcpServer: listening on port %d (max %d clients)", port_, maxClients_);
+    LOGI("TcpServer[%s]: listening on port %d (max %d clients)",
+         transportName(transport_), port_, maxClients_);
     return true;
 }
 
@@ -99,10 +109,17 @@ void TcpServer::acceptOne() {
     char ip[INET_ADDRSTRLEN] = {0};
     ::inet_ntop(AF_INET, &cli.sin_addr, ip, sizeof(ip));
     std::string peer = std::string(ip) + ":" + std::to_string(ntohs(cli.sin_port));
-    LOGI("TcpServer: client connected %s (fd=%d)", peer.c_str(), fd);
+    LOGI("TcpServer[%s]: client connected %s (fd=%d)",
+         transportName(transport_), peer.c_str(), fd);
 
-    auto session = std::make_shared<ClientSession>(fd, peer, hub_, cmds_, files_,
-                                                    streamFps_);
+    std::unique_ptr<IConn> conn;
+    if (transport_ == Transport::WebSocket)
+        conn = std::make_unique<WebSocketConn>(fd);
+    else
+        conn = std::make_unique<TcpConn>(fd);
+
+    auto session = std::make_shared<ClientSession>(std::move(conn), peer, hub_,
+                                                   cmds_, files_, streamFps_);
     std::thread th([session] { session->run(); });
     registry_.adopt(session, std::move(th));
 }

@@ -20,8 +20,10 @@ remote‑control the gimbal and browse recorded snapshots.
 - **Servo gimbal** — pan/tilt via the kernel PWM sysfs API (50 Hz, 1.0–2.0 ms → 0–180°).
 - **Local UI** — annotated video + status bar (FPS, mode, angles, face, client count)
   blitted straight to `/dev/fb0`.
-- **TCP streaming + control** — custom framed protocol (`SEC1`): JPEG video out, JSON
-  control in; one thread per client multiplexes both directions with `poll()`.
+- **TCP + WebSocket streaming + control** — custom framed protocol (`SEC1`): JPEG video
+  out, JSON control in; one thread per client multiplexes both directions with `poll()`.
+  Served over raw TCP (PC client) and natively over WebSocket (browser/Capacitor mobile
+  client) — one SEC1 frame per binary message, no external bridge.
 - **File manager** — list / download (chunked) / delete / snapshot, with a path‑traversal guard.
 - **Host‑dev mode** — `-DDEV_HOST` swaps the three hardware classes for desktop stubs
   (`cv::VideoCapture`, `cv::imshow`, logging servo) so ~90% of the logic can be developed
@@ -76,7 +78,8 @@ compile time in [`terminal/src/app/Hardware.h`](terminal/src/app/Hardware.h):
 │     ├─ vision/  FaceDetector (Haar)
 │     ├─ display/ Framebuffer, WindowDisplay (IDisplay)
 │     ├─ servo/   ServoController, StubServo (IServo), PanTiltTracker
-│     ├─ net/     Protocol.h, TcpServer, ClientSession, MiniJson, SocketUtil
+│     ├─ net/     Protocol.h, TcpServer, ClientSession, MiniJson, SocketUtil,
+│     │            IConn + TcpConn/WebSocketConn (transports), WebSocketProto.h
 │     ├─ file/    FileManager
 │     ├─ app/     VisionThread, DisplayThread, BusinessThread, Hardware.h
 │     └─ main.cpp
@@ -137,7 +140,9 @@ limits, tracking gains, TCP port, stream FPS) live in one place:
 
 `SEC1` — a 12‑byte big‑endian header (`magic, type, flags, length`) + payload.
 Video frames are raw JPEG with a 20‑byte subheader; control/file messages are
-JSON. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
+JSON. The terminal serves SEC1 over **both raw TCP (`:8888`) and WebSocket
+(`:8889`)** — the latter for the browser/Capacitor mobile client, one SEC1 frame
+per binary message. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
 
 ## Roadmap
 

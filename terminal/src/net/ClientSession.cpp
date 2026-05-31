@@ -17,13 +17,20 @@ namespace sec {
 
 using proto::MsgType;
 
-ClientSession::ClientSession(int fd, std::string peer, FrameHub& hub,
-                             CommandQueue& cmds, FileManager& files, int streamFps)
-    : fd_(fd), peer_(std::move(peer)), hub_(hub), cmds_(cmds), files_(files),
-      streamFps_(streamFps > 0 ? streamFps : 15) {}
+ClientSession::ClientSession(std::unique_ptr<IConn> conn, std::string peer,
+                             FrameHub& hub, CommandQueue& cmds, FileManager& files,
+                             int streamFps)
+    : conn_(std::move(conn)), peer_(std::move(peer)), hub_(hub), cmds_(cmds),
+      files_(files), streamFps_(streamFps > 0 ? streamFps : 15) {}
 
 void ClientSession::run() {
-    netutil::setTimeouts(fd_, 5);
+    netutil::setTimeouts(conn_->fd(), 5);  // also bounds the handshake read below
+    if (!conn_->handshake()) {             // WS upgrade (no-op for raw TCP)
+        LOGW("ClientSession[%s]: handshake failed", peer_.c_str());
+        conn_->close();
+        finished_.store(true);
+        return;
+    }
     sendJson(MsgType::Hello, "{\"role\":\"terminal\",\"ver\":1}");
 
     const uint64_t frameIntervalMs = 1000 / static_cast<uint64_t>(streamFps_);
@@ -35,7 +42,7 @@ void ClientSession::run() {
         int timeout = (nextFrameAt > now) ? static_cast<int>(nextFrameAt - now) : 0;
         if (timeout > 50) timeout = 50;  // re-check stop_ at least every 50 ms
 
-        pollfd pfd{ fd_, POLLIN, 0 };
+        pollfd pfd{ conn_->fd(), POLLIN, 0 };
         int pr = ::poll(&pfd, 1, timeout);
         if (pr < 0) {
             if (errno == EINTR) continue;
@@ -53,15 +60,14 @@ void ClientSession::run() {
         }
     }
 
-    ::close(fd_);
-    fd_ = -1;
+    conn_->close();
     finished_.store(true);
     LOGI("ClientSession[%s]: closed", peer_.c_str());
 }
 
 bool ClientSession::readAndDispatch(std::vector<uint8_t>& rx) {
     uint8_t tmp[8192];
-    ssize_t n = ::recv(fd_, tmp, sizeof(tmp), 0);
+    int n = conn_->recv(tmp, sizeof(tmp));
     if (n == 0) return false;  // orderly shutdown
     if (n < 0) {
         if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return true;
@@ -154,12 +160,12 @@ bool ClientSession::sendFrameIfNew() {
                                       static_cast<uint32_t>(f->height), f->tsMs,
                                       f->jpeg.data(), f->jpeg.size());
     lastSentSeq_ = f->seq;
-    return netutil::sendAll(fd_, msg.data(), msg.size());
+    return conn_->send(msg.data(), msg.size());
 }
 
 void ClientSession::sendJson(MsgType type, const std::string& json) {
     auto msg = proto::buildMessage(type, json);
-    netutil::sendAll(fd_, msg.data(), msg.size());  // a dead socket is caught by the frame loop
+    conn_->send(msg.data(), msg.size());  // a dead socket is caught by the frame loop
 }
 
 void ClientSession::sendFileList() {
@@ -196,14 +202,14 @@ void ClientSession::sendFile(const std::string& name) {
 
     if (total == 0) {  // not found / empty: single empty chunk signals "done, 0 chunks"
         auto msg = buildChunk(0, nullptr, 0);
-        netutil::sendAll(fd_, msg.data(), msg.size());
+        conn_->send(msg.data(), msg.size());
         return;
     }
     for (uint32_t idx = 0; idx < total; ++idx) {
         const std::size_t start = static_cast<std::size_t>(idx) * chunkSize;
         const std::size_t n = std::min(chunkSize, bytes.size() - start);
         auto msg = buildChunk(idx, bytes.data() + start, n);
-        if (!netutil::sendAll(fd_, msg.data(), msg.size())) return;
+        if (!conn_->send(msg.data(), msg.size())) return;
     }
 }
 

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <csignal>
 #include <memory>
+#include <string>
 #include <thread>
 
 #include "core/Config.h"
@@ -104,12 +105,29 @@ int main() {
         return 1;
     }
 
+    // Second listener: SEC1 over WebSocket for the mobile client. Shares the
+    // registry (so maxClients caps both transports). A failed WS bind is
+    // non-fatal — the TCP path still serves the PC client.
+    std::unique_ptr<TcpServer> wsServer;
+    if (cfg.wsEnabled) {
+        wsServer = std::make_unique<TcpServer>(cfg.wsPort, cfg.maxClients, hub, cmds,
+                                               files, registry, cfg.streamFps,
+                                               Transport::WebSocket);
+        if (!wsServer->bindAndListen()) {
+            LOGW("main: WebSocket bind failed on port %d; mobile client disabled",
+                 cfg.wsPort);
+            wsServer.reset();
+        }
+    }
+
     vision.start();
     displayThread.start();
     business.start();
     server.start();
-    LOGI("main: terminal running on port %d (%dx%d). Ctrl-C to stop.",
-         cfg.tcpPort, cfg.captureWidth, cfg.captureHeight);
+    if (wsServer) wsServer->start();
+    const std::string wsNote = wsServer ? " + WS " + std::to_string(cfg.wsPort) : "";
+    LOGI("main: terminal running on TCP %d%s (%dx%d). Ctrl-C to stop.",
+         cfg.tcpPort, wsNote.c_str(), cfg.captureWidth, cfg.captureHeight);
 
     while (!g_stop.load())
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -119,6 +137,7 @@ int main() {
     // Stop the network first (no new frames pushed), then the producer/consumer
     // threads, then drop any still-connected clients, then release hardware.
     server.stop();        server.join();
+    if (wsServer) { wsServer->stop(); wsServer->join(); }
     vision.stop();        vision.join();
     business.stop();      business.join();
     displayThread.stop(); displayThread.join();

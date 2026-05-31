@@ -14,10 +14,16 @@ class CommandQueue;
 class FileManager;
 class ClientRegistry;
 
+// Which byte transport accepted connections speak. Tcp hands the session a raw
+// socket (the PC client); WebSocket performs an RFC 6455 upgrade first (the
+// browser/Capacitor mobile client). Everything above IConn is identical.
+enum class Transport { Tcp, WebSocket };
+
 class TcpServer : public StoppableThread {
 public:
     TcpServer(int port, int maxClients, FrameHub& hub, CommandQueue& cmds,
-              FileManager& files, ClientRegistry& registry, int streamFps);
+              FileManager& files, ClientRegistry& registry, int streamFps,
+              Transport transport = Transport::Tcp);
     ~TcpServer() override { stop(); join(); }
 
     // Create/bind/listen the socket. Call once before start(); returns false on
@@ -37,6 +43,7 @@ private:
     FileManager&    files_;
     ClientRegistry& registry_;
     int             streamFps_;
+    Transport       transport_;
     int             listenFd_ = -1;
 };
 

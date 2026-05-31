@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include "Auth.h"
 #include "MiniJson.h"
 #include "SocketUtil.h"
 #include "../core/CommandQueue.h"
@@ -17,11 +18,18 @@ namespace sec {
 
 using proto::MsgType;
 
+namespace {
+// A client that connects but never sends a valid HELLO is dropped after this
+// long, so unauthenticated peers can't sit on one of the maxClients slots.
+constexpr uint64_t kAuthTimeoutMs = 5000;
+}  // namespace
+
 ClientSession::ClientSession(std::unique_ptr<IConn> conn, std::string peer,
                              FrameHub& hub, CommandQueue& cmds, FileManager& files,
-                             int streamFps)
+                             int streamFps, std::string authToken)
     : conn_(std::move(conn)), peer_(std::move(peer)), hub_(hub), cmds_(cmds),
-      files_(files), streamFps_(streamFps > 0 ? streamFps : 15) {}
+      files_(files), streamFps_(streamFps > 0 ? streamFps : 15),
+      authToken_(std::move(authToken)), authed_(authToken_.empty()) {}
 
 void ClientSession::run() {
     netutil::setTimeouts(conn_->fd(), 5);  // also bounds the handshake read below
@@ -31,16 +39,30 @@ void ClientSession::run() {
         finished_.store(true);
         return;
     }
-    sendJson(MsgType::Hello, "{\"role\":\"terminal\",\"ver\":1}");
+    // Advertise whether a token is required so a client can prompt for one.
+    sendJson(MsgType::Hello,
+             std::string("{\"role\":\"terminal\",\"ver\":1,\"auth\":") +
+                 (authToken_.empty() ? "false" : "true") + "}");
 
     const uint64_t frameIntervalMs = 1000 / static_cast<uint64_t>(streamFps_);
+    const uint64_t startMs = nowMs();
     uint64_t nextFrameAt = 0;
     std::vector<uint8_t> rx;
 
     while (!stop_.load()) {
+        if (!authed_ && nowMs() - startMs > kAuthTimeoutMs) {
+            LOGW("ClientSession[%s]: no valid token in time, dropping", peer_.c_str());
+            break;
+        }
+
         const uint64_t now = nowMs();
-        int timeout = (nextFrameAt > now) ? static_cast<int>(nextFrameAt - now) : 0;
-        if (timeout > 50) timeout = 50;  // re-check stop_ at least every 50 ms
+        // Until authenticated we push no video, so wait for the HELLO instead of
+        // spinning on a zero timeout (nextFrameAt stays 0 pre-auth).
+        int timeout = 50;  // also re-checks stop_ at least every 50 ms
+        if (authed_) {
+            timeout = (nextFrameAt > now) ? static_cast<int>(nextFrameAt - now) : 0;
+            if (timeout > 50) timeout = 50;
+        }
 
         pollfd pfd{ conn_->fd(), POLLIN, 0 };
         int pr = ::poll(&pfd, 1, timeout);
@@ -54,7 +76,7 @@ void ClientSession::run() {
                 if (!readAndDispatch(rx)) break;  // peer closed or protocol error
             }
         }
-        if (nowMs() >= nextFrameAt) {
+        if (authed_ && nowMs() >= nextFrameAt) {
             if (!sendFrameIfNew()) break;         // socket dead
             nextFrameAt = nowMs() + frameIntervalMs;
         }
@@ -87,7 +109,24 @@ bool ClientSession::readAndDispatch(std::vector<uint8_t>& rx) {
             return false;
         }
         if (rx.size() - off < proto::kHeaderSize + h.length) break;  // need more
-        handleMessage(h.type, rx.data() + off + proto::kHeaderSize, h.length);
+
+        const uint8_t* pl = rx.data() + off + proto::kHeaderSize;
+        if (!authed_) {
+            // Pre-auth: accept nothing but a HELLO carrying the matching token.
+            if (static_cast<MsgType>(h.type) != MsgType::Hello) {
+                LOGW("ClientSession[%s]: 0x%04x before auth, dropping",
+                     peer_.c_str(), h.type);
+                return false;
+            }
+            const std::string body(reinterpret_cast<const char*>(pl), h.length);
+            if (!auth::helloAuthorized(authToken_, body)) {
+                LOGW("ClientSession[%s]: invalid token, dropping", peer_.c_str());
+                return false;
+            }
+            authed_ = true;
+            LOGI("ClientSession[%s]: authenticated", peer_.c_str());
+        }
+        handleMessage(h.type, pl, h.length);
         off += proto::kHeaderSize + h.length;
     }
     if (off) rx.erase(rx.begin(), rx.begin() + static_cast<std::ptrdiff_t>(off));
@@ -143,9 +182,13 @@ void ClientSession::handleMessage(uint16_t type, const uint8_t* payload, uint32_
             sendFileList();
             break;
         }
-        case MsgType::Hello:
-            LOGI("ClientSession[%s]: peer hello %s", peer_.c_str(), body.c_str());
+        case MsgType::Hello: {
+            // Never log the raw body — it carries the auth token. Role only.
+            std::string role;
+            mjson::getString(body, "role", role);
+            LOGI("ClientSession[%s]: hello role=%s", peer_.c_str(), role.c_str());
             break;
+        }
         case MsgType::Heartbeat:
         default:
             break;

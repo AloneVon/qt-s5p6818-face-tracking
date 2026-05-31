@@ -33,7 +33,9 @@ bool TcpClient::isConnected() const {
     return sock_->state() == QAbstractSocket::ConnectedState;
 }
 
-void TcpClient::connectToTerminal(const QString& host, quint16 port) {
+void TcpClient::connectToTerminal(const QString& host, quint16 port,
+                                  const QString& token) {
+    token_ = token;
     rx_.clear();
     downloads_.clear();
     sock_->abort();
@@ -93,6 +95,7 @@ void TcpClient::requestSnapshot() {
 
 void TcpClient::onConnected() {
     QJsonObject hello{{"role", "pc"}, {"ver", 1}};
+    if (!token_.isEmpty()) hello.insert("token", token_);
     sendMessage(static_cast<quint16>(MsgType::Hello), toJson(hello));
     emit connected();
 }

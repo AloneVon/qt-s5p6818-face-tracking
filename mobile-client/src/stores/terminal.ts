@@ -45,7 +45,7 @@ export const useTerminal = defineStore('terminal', () => {
 
   const connected = computed(() => status.value === 'connected');
 
-  function connect(host: string, port: number) {
+  function connect(host: string, port: number, token = '') {
     disconnect();
     const url = `ws://${host}:${port}`;
     peer.value = `${host}:${port}`;
@@ -63,7 +63,9 @@ export const useTerminal = defineStore('terminal', () => {
     ws = sock;
     sock.onopen = () => {
       status.value = 'connected';
-      send(proto.hello());
+      // HELLO first (carries the token, if any); the terminal gates everything
+      // else until it authenticates, so the file list request must follow it.
+      send(proto.hello(token));
       refreshFiles();
     };
     sock.onmessage = (ev) => {

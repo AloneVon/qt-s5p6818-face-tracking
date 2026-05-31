@@ -97,7 +97,7 @@ int main() {
     BusinessThread business(*servo, tracker, track, cmds, status,
                             cfg.servoUpdateMs, cfg.manualOverrideMs);
     TcpServer      server(cfg.tcpPort, cfg.maxClients, hub, cmds, files, registry,
-                          cfg.streamFps);
+                          cfg.streamFps, cfg.authToken);
 
     if (!server.bindAndListen()) {
         LOGE("main: TCP bind failed on port %d; aborting", cfg.tcpPort);
@@ -112,7 +112,7 @@ int main() {
     if (cfg.wsEnabled) {
         wsServer = std::make_unique<TcpServer>(cfg.wsPort, cfg.maxClients, hub, cmds,
                                                files, registry, cfg.streamFps,
-                                               Transport::WebSocket);
+                                               cfg.authToken, Transport::WebSocket);
         if (!wsServer->bindAndListen()) {
             LOGW("main: WebSocket bind failed on port %d; mobile client disabled",
                  cfg.wsPort);

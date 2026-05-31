@@ -97,6 +97,10 @@ fieldset:disabled {
 .conn .port {
   width: 76px;
 }
+.conn .token {
+  flex: 1 1 140px;
+  min-width: 0;
+}
 .conn .go.on {
   border-color: var(--accent);
   color: var(--accent);

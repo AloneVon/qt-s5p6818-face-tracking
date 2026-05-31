@@ -61,6 +61,11 @@ struct Config {
     int    streamFps      = 15;      // frames/sec pushed to each client
     int    jpegQuality    = 70;      // cv::imencode quality 0..100
     int    maxClients     = 8;
+    // Shared-token gate. A client must present this token in its HELLO before any
+    // video or control is exchanged (over either transport). Empty = auth
+    // disabled: open LAN, the original behaviour that keeps the mocks and any
+    // token-less client working. Set a non-empty value to lock the terminal down.
+    std::string authToken = "";
 
     // ---- File manager -----------------------------------------------------
     std::string captureDir = "captures";

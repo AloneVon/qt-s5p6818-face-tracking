@@ -24,6 +24,9 @@ remote‑control the gimbal and browse recorded snapshots.
   out, JSON control in; one thread per client multiplexes both directions with `poll()`.
   Served over raw TCP (PC client) and natively over WebSocket (browser/Capacitor mobile
   client) — one SEC1 frame per binary message, no external bridge.
+- **Optional shared-token auth** — set `Config::authToken` to require every client to
+  present a matching token in its `HELLO` before any video or control is served;
+  constant-time compare, never logged. Empty (default) leaves the LAN open.
 - **File manager** — list / download (chunked) / delete / snapshot, with a path‑traversal guard.
 - **Host‑dev mode** — `-DDEV_HOST` swaps the three hardware classes for desktop stubs
   (`cv::VideoCapture`, `cv::imshow`, logging servo) so ~90% of the logic can be developed
@@ -142,7 +145,9 @@ limits, tracking gains, TCP port, stream FPS) live in one place:
 Video frames are raw JPEG with a 20‑byte subheader; control/file messages are
 JSON. The terminal serves SEC1 over **both raw TCP (`:8888`) and WebSocket
 (`:8889`)** — the latter for the browser/Capacitor mobile client, one SEC1 frame
-per binary message. Full spec: [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
+per binary message. An optional **shared token** (`Config::authToken`) gates both
+transports — clients send it in their `HELLO`. Full spec:
+[`protocol/PROTOCOL.md`](protocol/PROTOCOL.md).
 
 ## Roadmap
 

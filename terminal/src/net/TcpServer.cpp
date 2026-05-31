@@ -29,10 +29,11 @@ const char* transportName(Transport t) {
 
 TcpServer::TcpServer(int port, int maxClients, FrameHub& hub, CommandQueue& cmds,
                      FileManager& files, ClientRegistry& registry, int streamFps,
-                     Transport transport)
+                     std::string authToken, Transport transport)
     : port_(port), maxClients_(maxClients > 0 ? maxClients : 1),
       hub_(hub), cmds_(cmds), files_(files), registry_(registry),
-      streamFps_(streamFps), transport_(transport) {}
+      streamFps_(streamFps), authToken_(std::move(authToken)),
+      transport_(transport) {}
 
 bool TcpServer::bindAndListen() {
     listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -119,7 +120,8 @@ void TcpServer::acceptOne() {
         conn = std::make_unique<TcpConn>(fd);
 
     auto session = std::make_shared<ClientSession>(std::move(conn), peer, hub_,
-                                                   cmds_, files_, streamFps_);
+                                                   cmds_, files_, streamFps_,
+                                                   authToken_);
     std::thread th([session] { session->run(); });
     registry_.adopt(session, std::move(th));
 }

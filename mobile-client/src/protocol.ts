@@ -137,7 +137,8 @@ function buildJson(type: MsgType, obj: unknown): ArrayBuffer {
   return buildMessage(type, textEncoder.encode(JSON.stringify(obj)));
 }
 
-export const hello = () => buildJson(MsgType.Hello, { role: 'mobile', ver: 1 });
+export const hello = (token?: string) =>
+  buildJson(MsgType.Hello, token ? { role: 'mobile', ver: 1, token } : { role: 'mobile', ver: 1 });
 export const servoStep = (dPan: number, dTilt: number) =>
   buildJson(MsgType.ServoCmd, { mode: 'step', pan: dPan, tilt: dTilt });
 export const servoAbs = (pan: number, tilt: number) =>

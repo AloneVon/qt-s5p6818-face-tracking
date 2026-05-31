@@ -24,7 +24,8 @@ class FileManager;
 class ClientSession : public ISession {
 public:
     ClientSession(std::unique_ptr<IConn> conn, std::string peer, FrameHub& hub,
-                  CommandQueue& cmds, FileManager& files, int streamFps);
+                  CommandQueue& cmds, FileManager& files, int streamFps,
+                  std::string authToken = "");
 
     void run();  // blocking; executed on the session's own thread
 
@@ -45,6 +46,8 @@ private:
     CommandQueue& cmds_;
     FileManager& files_;
     int          streamFps_;
+    std::string  authToken_;          // required token; empty = auth disabled
+    bool         authed_;             // gates video + control until HELLO clears it
     uint32_t     lastSentSeq_ = UINT32_MAX;
     std::atomic<bool> stop_{false};
     std::atomic<bool> finished_{false};

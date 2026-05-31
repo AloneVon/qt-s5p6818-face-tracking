@@ -48,7 +48,7 @@ serves WebSocket natively (`terminal/src/net/WebSocketConn.{h,cpp}`, codec in
 
 | type   | name           | dir | payload |
 |--------|----------------|-----|---------|
-| 0x0001 | HELLO          | ↔   | JSON `{"role":"pc"|"mobile"|"terminal","ver":1}` |
+| 0x0001 | HELLO          | ↔   | JSON `{"role":..,"ver":1}`; client adds `"token":".."` if required, terminal adds `"auth":true|false` (see [Authentication](#authentication-shared-token)) |
 | 0x0010 | VIDEO_FRAME    | T→C | 20-byte subheader + JPEG (see below) |
 | 0x0020 | SERVO_CMD      | C→T | JSON `{"mode":"step"|"abs","pan":<deg>,"tilt":<deg>}` |
 | 0x0021 | MODE_CMD       | C→T | JSON `{"autoTrack":true|false}` |
@@ -75,6 +75,25 @@ serves WebSocket natively (`terminal/src/net/WebSocketConn.{h,cpp}`, codec in
 `mode:"abs"` sets absolute target angles. Sending any SERVO_CMD switches the
 terminal to manual mode for a few seconds (see `Config::manualOverrideMs`),
 then auto-tracking resumes.
+
+## Authentication (shared token)
+
+The terminal can require a **shared token** before it serves a client. When
+`Config::authToken` is non-empty, every client must present that exact token in
+its **HELLO** before the terminal sends any video or accepts any control/file
+message:
+
+- Client→terminal `HELLO`: `{"role":"pc"|"mobile","ver":1,"token":"<token>"}`.
+- Terminal→client `HELLO` advertises whether a token is needed —
+  `{"role":"terminal","ver":1,"auth":true|false}` — sent right after the
+  TCP connect / WebSocket upgrade, before any video.
+- A connection that presents a wrong or missing token, sends any non-HELLO
+  message before authenticating, or sends no valid HELLO within a few seconds is
+  dropped (and, pre-auth, counts against `Config::maxClients` only briefly).
+
+When `authToken` is empty (the default) the check is disabled: clients may omit
+the token and the terminal behaves exactly as before. The token is compared in
+constant time and is never written to the terminal logs.
 
 ## JS reader sketch (mobile/web)
 

@@ -35,7 +35,7 @@ mobile-client/
 │  ├─ protocol.ts          # SEC1 encode/decode (DataView, big‑endian)
 │  ├─ stores/terminal.ts   # Pinia store: WebSocket, frame dispatch, controls
 │  ├─ components/
-│  │  ├─ ConnectionBar.vue # host/port + connect, status dot
+│  │  ├─ ConnectionBar.vue # host/port/token + connect, status dot
 │  │  ├─ VideoView.vue     # <img> JPEG view + HUD + tap‑to‑aim (letterbox math)
 │  │  ├─ ControlPad.vue    # d‑pad (▲▼◀▶⌂), step slider, auto‑track checkbox
 │  │  └─ FileGallery.vue   # refresh/snapshot + per‑file save/delete
@@ -77,6 +77,10 @@ cd mobile-client && npm run dev
 
 Then connect to **`127.0.0.1` / `8889`** (the defaults in the connection bar).
 The TCP mock stays on `8888`, so both mocks can run at once.
+
+If the real terminal requires a shared token (`Config::authToken`), type it into
+the connection bar's **token** field before connecting; leave it blank otherwise
+(the mock needs none). The token is sent in the `HELLO` and is never displayed.
 
 ## Package as a native app (on a machine with the SDKs)
 

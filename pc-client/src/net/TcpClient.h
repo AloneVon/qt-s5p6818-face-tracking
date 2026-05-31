@@ -30,7 +30,8 @@ public:
     bool isConnected() const;
 
 public slots:
-    void connectToTerminal(const QString& host, quint16 port);
+    void connectToTerminal(const QString& host, quint16 port,
+                           const QString& token = QString());
     void disconnectFromTerminal();
 
     // Control channel (client -> terminal).
@@ -70,6 +71,7 @@ private:
     void handleFileDeleteResp(const QByteArray& payload);
 
     QTcpSocket* sock_;
+    QString     token_;  // shared-token auth; sent in HELLO, empty = none
     QByteArray  rx_;  // accumulates bytes until whole frames are available
 
     // Chunked-download reassembly, keyed by filename.

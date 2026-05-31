@@ -19,11 +19,15 @@ ControlPanel::ControlPanel(QWidget* parent) : QWidget(parent) {
     port_ = new QSpinBox(connBox);
     port_->setRange(1, 65535);
     port_->setValue(8888);
+    token_ = new QLineEdit(connBox);
+    token_->setEchoMode(QLineEdit::Password);
+    token_->setPlaceholderText(tr("if required"));
     connectBtn_ = new QPushButton(connBox);
 
     auto* connForm = new QFormLayout(connBox);
     connForm->addRow(tr("Host"), host_);
     connForm->addRow(tr("Port"), port_);
+    connForm->addRow(tr("Token"), token_);
     connForm->addRow(connectBtn_);
 
     // ---- Gimbal d-pad ----------------------------------------------------
@@ -89,7 +93,8 @@ void ControlPanel::onConnectClicked() {
         emit disconnectRequested();
     else
         emit connectRequested(host_->text().trimmed(),
-                              static_cast<quint16>(port_->value()));
+                              static_cast<quint16>(port_->value()),
+                              token_->text());
 }
 
 void ControlPanel::setConnected(bool connected) {
@@ -97,6 +102,7 @@ void ControlPanel::setConnected(bool connected) {
     connectBtn_->setText(connected ? tr("Disconnect") : tr("Connect"));
     host_->setEnabled(!connected);
     port_->setEnabled(!connected);
+    token_->setEnabled(!connected);
     gimbalBox_->setEnabled(connected);
     modeBox_->setEnabled(connected);
 }

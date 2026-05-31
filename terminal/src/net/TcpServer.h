@@ -5,6 +5,8 @@
 // promptly and gives us a natural cadence to reap finished sessions.
 #pragma once
 
+#include <string>
+
 #include "../core/StoppableThread.h"
 
 namespace sec {
@@ -23,7 +25,7 @@ class TcpServer : public StoppableThread {
 public:
     TcpServer(int port, int maxClients, FrameHub& hub, CommandQueue& cmds,
               FileManager& files, ClientRegistry& registry, int streamFps,
-              Transport transport = Transport::Tcp);
+              std::string authToken = "", Transport transport = Transport::Tcp);
     ~TcpServer() override { stop(); join(); }
 
     // Create/bind/listen the socket. Call once before start(); returns false on
@@ -43,6 +45,7 @@ private:
     FileManager&    files_;
     ClientRegistry& registry_;
     int             streamFps_;
+    std::string     authToken_;
     Transport       transport_;
     int             listenFd_ = -1;
 };

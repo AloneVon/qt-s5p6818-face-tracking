@@ -54,10 +54,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     // ---- UI intent -> client ---------------------------------------------
     connect(controls_, &ControlPanel::connectRequested, this,
-            [this](const QString& host, quint16 port) {
+            [this](const QString& host, quint16 port, const QString& token) {
                 peer_ = QStringLiteral("%1:%2").arg(host).arg(port);
                 connLabel_->setText(tr("Connecting to %1…").arg(peer_));
-                tcp_->connectToTerminal(host, port);
+                tcp_->connectToTerminal(host, port, token);
             });
     connect(controls_, &ControlPanel::disconnectRequested,
             tcp_, &TcpClient::disconnectFromTerminal);

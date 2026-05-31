@@ -23,7 +23,7 @@ public:
     void setConnected(bool connected);
 
 signals:
-    void connectRequested(const QString& host, quint16 port);
+    void connectRequested(const QString& host, quint16 port, const QString& token);
     void disconnectRequested();
     void panTiltStep(double dPanDeg, double dTiltDeg);  // relative nudge
     void homeRequested();                               // re-center the gimbal
@@ -35,6 +35,7 @@ private slots:
 private:
     QLineEdit*      host_;
     QSpinBox*       port_;
+    QLineEdit*      token_;
     QPushButton*    connectBtn_;
     QDoubleSpinBox* step_;
     QCheckBox*      autoTrack_;

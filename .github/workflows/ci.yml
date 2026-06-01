@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # The full terminal needs OpenCV + V4L2 + framebuffer and only builds on the
+  # board / Ubuntu cross host. But WebSocketProto.h is pure and portable, so we
+  # exercise the fiddly bits (handshake hash, framing, RFC compliance) here.
+  terminal-codec-test:
+    name: WebSocket codec unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile codec test
+        run: c++ -std=c++17 -Wall -Wextra -I terminal/src tools/test_ws_codec.cpp -o test_ws_codec
+      - name: Run codec test
+        run: ./test_ws_codec
+
+  build-clients:
+    name: PC + mobile clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- PC client (pure Qt, no OpenCV) --------------------------------
+      - name: Install Qt 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qtbase5-dev qttools5-dev-tools libgl1-mesa-dev
+
+      - name: Build PC client
+        working-directory: pc-client
+        run: |
+          mkdir -p build && cd build
+          qmake ..
+          make -j"$(nproc)"
+
+      # ---- Mobile client (Vue 3 + Capacitor) -----------------------------
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile-client/package-lock.json
+
+      - name: Install mobile deps
+        working-directory: mobile-client
+        run: npm ci
+
+      - name: Build mobile client
+        working-directory: mobile-client
+        run: npm run build

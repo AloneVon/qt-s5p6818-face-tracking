@@ -33,6 +33,10 @@ ClientSession::ClientSession(std::unique_ptr<IConn> conn, std::string peer,
 
 void ClientSession::run() {
     netutil::setTimeouts(conn_->fd(), 5);  // also bounds the handshake read below
+    // TCP keepalive so a vanished peer is reaped in ~60s instead of holding a
+    // maxClients slot until the kernel default (~2h) gives up. Cheap and only
+    // affects dead links — a live client that just isn't sending is left alone.
+    netutil::setKeepalive(conn_->fd(), /*idle=*/30, /*intvl=*/10, /*cnt=*/3);
     if (!conn_->handshake()) {             // WS upgrade (no-op for raw TCP)
         LOGW("ClientSession[%s]: handshake failed", peer_.c_str());
         conn_->close();

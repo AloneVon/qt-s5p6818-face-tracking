@@ -71,7 +71,8 @@ int main() {
               c[8] == 0x00 && c[9] == 0x00 && c.size() == 10 + 65536);
     }
 
-    // 6) Round-trip: encode (server, unmasked) then decode it back.
+    // 6) Round-trip: encode (server-side, unmasked) then decode with the
+    //    "requireMasked=false" relaxation so the same buffer survives both sides.
     {
         const char* msg = "SEC1-over-websocket round trip \x01\x02\x03";
         const std::size_t n = std::strlen(msg);
@@ -79,7 +80,8 @@ int main() {
         ws::encodeFrame(wire, ws::kOpBinary, reinterpret_cast<const uint8_t*>(msg), n);
         std::size_t consumed = 0;
         ws::Frame fr;
-        auto r = ws::decodeFrame(wire.data(), wire.size(), consumed, fr);
+        auto r = ws::decodeFrame(wire.data(), wire.size(), consumed, fr,
+                                 16u * 1024u * 1024u, /*requireMasked=*/false);
         check("encode→decode round trip",
               r == ws::Parse::Ok && consumed == wire.size() &&
               fr.opcode == ws::kOpBinary && fr.payload.size() == n &&
@@ -104,6 +106,36 @@ int main() {
         ws::Frame fr;
         check("oversize payload => Error",
               ws::decodeFrame(f, sizeof(f), consumed, fr, 1024) == ws::Parse::Error);
+    }
+
+    // 9) RFC 6455 §5.1: an unmasked client→server frame must be refused. Same
+    //    bytes as test 4 (server-style 'Hello'), but now in the decoder's path.
+    {
+        const uint8_t f[] = {0x81, 0x05, 'H', 'e', 'l', 'l', 'o'};
+        std::size_t consumed = 0;
+        ws::Frame fr;
+        check("unmasked client frame => Error",
+              ws::decodeFrame(f, sizeof(f), consumed, fr) == ws::Parse::Error);
+    }
+
+    // 10) RFC 6455 §5.5: a fragmented control frame (FIN=0) is invalid.
+    //     0x09 = Ping, FIN bit cleared (high bit of byte 0 = 0).
+    {
+        const uint8_t f[] = {0x09, 0x80, 0x00, 0x00, 0x00, 0x00};
+        std::size_t consumed = 0;
+        ws::Frame fr;
+        check("fragmented control frame => Error",
+              ws::decodeFrame(f, sizeof(f), consumed, fr) == ws::Parse::Error);
+    }
+
+    // 11) RFC 6455 §5.5: a control frame > 125 bytes is invalid (use 126 here).
+    {
+        std::vector<uint8_t> f = {0x89, 0xFE, 0x00, 0x7E};  // Ping, masked, len=126
+        f.insert(f.end(), 4 + 126, 0x00);                    // mask(4) + payload(126)
+        std::size_t consumed = 0;
+        ws::Frame fr;
+        check("oversize control frame => Error",
+              ws::decodeFrame(f.data(), f.size(), consumed, fr) == ws::Parse::Error);
     }
 
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASSED",

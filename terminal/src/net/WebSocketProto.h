@@ -147,8 +147,13 @@ struct Frame {
 // Try to decode one client→server frame from p[0..n). On Ok, `consumed` is the
 // number of bytes the frame occupied and `out` holds the unmasked payload.
 // NeedMore => buffer the rest and retry; Error => protocol violation / too big.
+//
+// `requireMasked` defaults to true (RFC 6455 §5.1: client→server frames MUST be
+// masked, server MUST close on an unmasked one). The off-board codec test toggles
+// this off to exercise the encode→decode symmetry with the server-side encoder.
 inline Parse decodeFrame(const uint8_t* p, std::size_t n, std::size_t& consumed,
-                         Frame& out, std::size_t maxPayload = 16u * 1024u * 1024u) {
+                         Frame& out, std::size_t maxPayload = 16u * 1024u * 1024u,
+                         bool requireMasked = true) {
     if (n < 2) return Parse::NeedMore;
     const uint8_t b0 = p[0], b1 = p[1];
     out.fin = (b0 & 0x80) != 0;
@@ -167,6 +172,13 @@ inline Parse decodeFrame(const uint8_t* p, std::size_t n, std::size_t& consumed,
         i = 10;
     }
     if (len > maxPayload) return Parse::Error;
+    // Control frames (opcode high bit set) must be FIN=1 and ≤ 125 bytes
+    // (RFC 6455 §5.5). A fragmented or oversize ping/pong/close is a protocol
+    // violation — refuse before we ever allocate `out.payload`.
+    if ((out.opcode & 0x8) && (!out.fin || len > 125)) return Parse::Error;
+    // Client→server frames must be masked. The mock terminal and off-board test
+    // can opt out (requireMasked=false) when exercising the codec end-to-end.
+    if (requireMasked && !masked) return Parse::Error;
     const uint8_t* mask = nullptr;
     if (masked) {
         if (n < i + 4) return Parse::NeedMore;

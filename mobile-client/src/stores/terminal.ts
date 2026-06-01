@@ -49,7 +49,11 @@ export const useTerminal = defineStore('terminal', () => {
   // the device/WebView — there's no in-page override for a failed TLS handshake.
   function connect(host: string, port: number, token = '', tls = false) {
     disconnect();
-    const url = `${tls ? 'wss' : 'ws'}://${host}:${port}`;
+    // IPv6 literals need to be bracketed in a URL ("[::1]:8889", not "::1:8889"),
+    // otherwise the ":" between host and port is ambiguous and the WebSocket
+    // constructor throws SyntaxError. Treat any host with a ":" as IPv6.
+    const hostInUrl = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+    const url = `${tls ? 'wss' : 'ws'}://${hostInUrl}:${port}`;
     peer.value = `${host}:${port}`;
     error.value = '';
     status.value = 'connecting';

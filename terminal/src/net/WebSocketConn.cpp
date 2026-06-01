@@ -16,23 +16,34 @@ namespace {
 // Case-insensitive lookup of an HTTP header value (header names are
 // case-insensitive per RFC 7230; the value is returned with its original case,
 // which matters for the base64 Sec-WebSocket-Key). "" if absent.
-std::string headerValue(const std::string& req, const char* name) {
-    std::string lower(req.size(), '\0');
-    std::transform(req.begin(), req.end(), lower.begin(),
+//
+// Anchored to start-of-line: only the "\r\n<name>:" form matches, so a header
+// value containing the literal "Sec-WebSocket-Key:" can't masquerade as the
+// header itself. `headerBlock` must be just the header section (no trailing
+// body bytes) — the caller strips the body before calling this.
+std::string headerValue(const std::string& headerBlock, const char* name) {
+    std::string lower(headerBlock.size(), '\0');
+    std::transform(headerBlock.begin(), headerBlock.end(), lower.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     std::string key(name);
     std::transform(key.begin(), key.end(), key.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    std::size_t pos = lower.find(key + ":");
+    // Each header sits at the start of a line. The request line itself doesn't
+    // begin with "\r\n", so probe the very start as a synthetic line start too.
+    const std::string needle = "\r\n" + key + ":";
+    std::size_t pos = (lower.compare(0, key.size() + 1, key + ":") == 0)
+                          ? 0
+                          : lower.find(needle);
     if (pos == std::string::npos) return "";
-    pos += key.size() + 1;                       // skip "name:"
-    std::size_t end = req.find("\r\n", pos);
-    if (end == std::string::npos) end = req.size();
-    std::size_t a = req.find_first_not_of(" \t", pos);
+    if (pos != 0) pos += 2;                       // skip the leading "\r\n"
+    pos += key.size() + 1;                        // skip "name:"
+    std::size_t end = headerBlock.find("\r\n", pos);
+    if (end == std::string::npos) end = headerBlock.size();
+    std::size_t a = headerBlock.find_first_not_of(" \t", pos);
     if (a == std::string::npos || a >= end) return "";
-    std::size_t b = req.find_last_not_of(" \t", end - 1);
-    return req.substr(a, b - a + 1);
+    std::size_t b = headerBlock.find_last_not_of(" \t", end - 1);
+    return headerBlock.substr(a, b - a + 1);
 }
 
 } // namespace
@@ -58,14 +69,16 @@ bool WebSocketConn::handshake() {
         return false;                             // timeout / error
     }
 
-    const std::string key = headerValue(req, "Sec-WebSocket-Key");
+    // Split header block from any early WebSocket frame bytes that piggybacked
+    // on the same read. Search only the header block so frame bytes can't be
+    // confused for an HTTP header.
+    const std::size_t bodyStart = req.find("\r\n\r\n") + 4;
+    const std::string headerBlock = req.substr(0, bodyStart - 2);  // keep trailing CRLF
+    const std::string key = headerValue(headerBlock, "Sec-WebSocket-Key");
     if (key.empty()) {
         LOGW("WebSocketConn: missing Sec-WebSocket-Key");
         return false;
     }
-
-    // Bytes after the header terminator are an early WebSocket frame; keep them.
-    const std::size_t bodyStart = req.find("\r\n\r\n") + 4;
     if (bodyStart < req.size())
         rx_.insert(rx_.end(), req.begin() + static_cast<std::ptrdiff_t>(bodyStart), req.end());
 

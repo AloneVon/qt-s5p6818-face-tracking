@@ -150,6 +150,10 @@ void TcpClient::onSslErrors(const QList<QSslError>& errors) {
         } else {
             emit errorOccurred(QStringLiteral(
                 "server certificate does not match the pinned cert; refusing"));
+            // Explicit abort so the UI sees a prompt disconnected() instead of
+            // relying on Qt's default sslErrors-without-ignore path, which can
+            // leave the socket in a half-open state until the kernel times out.
+            sock_->abort();
         }
         return;
     }

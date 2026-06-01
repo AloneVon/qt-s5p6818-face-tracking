@@ -229,6 +229,15 @@ void ClientSession::sendFileList() {
 }
 
 void ClientSession::sendFile(const std::string& name) {
+    // FILE_DATA encodes nameLen as a single byte. FileManager::resolve already
+    // caps names at 128, but be explicit here so a future relaxation can't
+    // silently corrupt the wire by truncating to (size & 0xFF).
+    if (name.size() > 255) {
+        LOGW("ClientSession[%s]: file name too long (%zu), refusing",
+             peer_.c_str(), name.size());
+        return;
+    }
+
     std::vector<uint8_t> bytes;
     const bool ok = files_.read(name, bytes);
 

@@ -25,7 +25,10 @@ OPENCV_LIBS   := $(shell $(PKG) --libs   $(OPENCV_PC))
 
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wno-psabi -pthread \
             -Isrc $(OPENCV_CFLAGS)
-LDLIBS   := $(OPENCV_LIBS) -pthread
+# -latomic: StatusBoard uses std::atomic<double>. On armv7-a (S5P6818) gcc emits
+# libatomic calls for some 64-bit ops; linking it unconditionally is cheap on
+# x86-64 (gets dropped if unused) and avoids a board-only link failure.
+LDLIBS   := $(OPENCV_LIBS) -pthread -latomic
 
 ifeq ($(DEV_HOST),1)
 CXXFLAGS += -DDEV_HOST

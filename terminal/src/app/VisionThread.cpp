@@ -73,10 +73,16 @@ void VisionThread::run() {
         if (dt > 0.0) fps = (fps == 0.0) ? (1.0 / dt) : (fps * 0.9 + (1.0 / dt) * 0.1);
         status_.captureFps.store(fps);
 
-        // Debounced auto-snapshot on the rising edge of a detection.
+        // Debounced auto-snapshot on the rising edge of a detection. Run the
+        // imwrite on a detached thread — at 640x480 on an SD card it can take
+        // 50–200 ms, and the rising-edge debounce means at most one is in
+        // flight, so a quick detach beats a worker queue here. The thread
+        // owns a private clone, so the local Mat can keep mutating.
         if (autoSnapshot_ && found && !prevFound &&
             now - lastSnapMs >= static_cast<uint64_t>(autoSnapshotIntervalMs_)) {
-            files_.snapshot(frame);
+            std::thread([this, snap = frame.clone()] {
+                files_.snapshot(snap);
+            }).detach();
             lastSnapMs = now;
         }
         prevFound = found;

@@ -12,6 +12,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include "../core/Log.h"
+#include "../core/Time.h"
 
 namespace sec {
 
@@ -46,7 +47,12 @@ std::string FileManager::snapshot(const cv::Mat& bgr) {
     std::tm tm{};
     localtime_r(&t, &tm);
     char name[64];
-    std::strftime(name, sizeof(name), "snap_%Y%m%d_%H%M%S.jpg", &tm);
+    // Append milliseconds so two snapshots within the same wall-clock second
+    // (manual+auto, or two manual presses) don't silently overwrite each other.
+    char base[48];
+    std::strftime(base, sizeof(base), "snap_%Y%m%d_%H%M%S", &tm);
+    std::snprintf(name, sizeof(name), "%s_%03u.jpg",
+                  base, static_cast<unsigned>(nowMs() % 1000));
 
     std::lock_guard<std::mutex> lk(m_);
     std::string full = dir_ + "/" + name;
